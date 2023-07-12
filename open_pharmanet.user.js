@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Open Pharmanet
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.4
 // @description  Provide efficient links to the pharmanet page of a user!
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
@@ -39,7 +39,7 @@ const CLINIC_ID_INDEX = 5;
         let newListElement = medication_div.querySelector("li");
         let copyNewListElement = newListElement.cloneNode(true);
         let openButton = copyNewListElement.querySelector("button");
-        openButton.innerText = "Open Pharmanet 3.0";
+        openButton.innerText = "Open Pharmanet 4.0";
         medication_div.querySelector("ul").insertBefore(copyNewListElement, newListElement);
         copyNewListElement.addEventListener("click", openWindowWithPost);
     }
