@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Open Pharmanet
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.0
 // @description  Provide efficient links to the pharmanet page of a user!
 // @author       Bryson Marazzi
-// @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
+// @match        https://app.aryaehr.com/aryaehr/clinics/*
 // @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // @grant        none
 // ==/UserScript==
@@ -15,20 +15,22 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
 const PHARMA_URL_ROOT = 'https://swan.medinet.ca/cgi-bin/cedarcare.cgi';
 const PATIENT_ID_INDEX = 7;
 const CLINIC_ID_INDEX = 5;
+const IS_MEDICATION_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/patients\/[a-zA-Z0-9-]+\/profile$/;
 
 (function() {
     'use strict';
-    waitForElement(MEDICATION_ID, function(medication_div) {
-        // Get the URL info as #medications loads faster
-        window.patient_id = window.location.href.split("/")[PATIENT_ID_INDEX];
-        window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
 
-        addOpenButton(medication_div);
-    });
+    window.onload = observeUrlChange(IS_MEDICATION_PAGE_REGEX, onMedicationsPageLoad);
 
-    waitForElement(SUBNAV_ID, function(subnav_div) {
-        makePatientNameClickable(subnav_div);
-    });
+    function onMedicationsPageLoad(){
+        waitForElement(MEDICATION_ID, function(medication_div) {
+            addOpenButton(medication_div);
+        });
+
+        waitForElement(SUBNAV_ID, function(subnav_div) {
+            makePatientNameClickable(subnav_div);
+        });
+    }
 
     function makePatientNameClickable(subnav_div){
         var patientName = subnav_div.querySelector(".patient_name");
@@ -39,7 +41,7 @@ const CLINIC_ID_INDEX = 5;
         let newListElement = medication_div.querySelector("li");
         let copyNewListElement = newListElement.cloneNode(true);
         let openButton = copyNewListElement.querySelector("button");
-        openButton.innerText = "Open Pharmanet 4.0";
+        openButton.innerText = "Open Pharmanet";
         medication_div.querySelector("ul").insertBefore(copyNewListElement, newListElement);
         copyNewListElement.addEventListener("click", openWindowWithPost);
     }
@@ -89,7 +91,6 @@ const CLINIC_ID_INDEX = 5;
     }
 
     function waitForElement(elementId, callback) {
-        console.log("setting up waiting");
         const maxAttempts = 10;
         const initialDelay = 500; // milliseconds
         let attempt = 0;
@@ -106,8 +107,24 @@ const CLINIC_ID_INDEX = 5;
                 }
             }
         }
-
         checkElement();
     }
+
+    const observeUrlChange = (urlRegex, callback) => {
+        let oldHref = document.location.href;
+        const body = document.querySelector("body");
+        const observer = new MutationObserver(mutations => {
+            if (oldHref !== document.location.href) {
+                oldHref = document.location.href;
+                if(urlRegex.text(document.location.href)) {
+                    callback();
+                }
+            }
+        });
+        observer.observe(body, { childList: true, subtree: true });
+        if(urlRegex.text(document.location.href)){
+            callback();
+        }
+    };
 
 })();
