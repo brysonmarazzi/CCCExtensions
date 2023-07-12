@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Open Pharmanet
 // @namespace    http://tampermonkey.net/
-// @version      0.0
+// @version      0.1
 // @description  Provide efficient links to the pharmanet page of a user!
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
