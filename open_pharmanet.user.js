@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Open Pharmanet
 // @namespace    http://tampermonkey.net/
-// @version      0.1
-// @description  try to take over the world!
-// @author       You
+// @version      0.0
+// @description  Provide efficient links to the pharmanet page of a user!
+// @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
 // @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // @grant        none
+// @updateURL    https://github.com/brysonmarazzi/CCCExtensions/raw/main/open_pharmanet.user.js
 // ==/UserScript==
 
 const MEDICATION_ID = "medications";
