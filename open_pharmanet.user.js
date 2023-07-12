@@ -15,8 +15,6 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
 const PHARMA_URL_ROOT = 'https://swan.medinet.ca/cgi-bin/cedarcare.cgi';
 const PATIENT_ID_INDEX = 7;
 const CLINIC_ID_INDEX = 5;
-const PHARMANET_PW = "Tylenol5";
-const PHARMANET_LOGIN = "mar4087";
 
 (function() {
     'use strict';
@@ -71,7 +69,7 @@ const PHARMANET_LOGIN = "mar4087";
             form.setAttribute("action", PHARMA_URL_ROOT);
             form.setAttribute("target", name);
 
-            var params = { 'login' : PHARMANET_LOGIN, 'passwd': PHARMANET_PW, 'phn':phn };
+            var params = { 'login' : "TODO_ADD", 'passwd': "TODO_PW", 'phn':phn };
 
             for (var i in params) {
                 if (params.hasOwnProperty(i)) {
