@@ -110,7 +110,7 @@ const IS_MEDICATION_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics
         checkElement();
     }
 
-    const observeUrlChange = (urlRegex, callback) => {
+    function observeUrlChange(urlRegex, callback){
         let oldHref = document.location.href;
         const body = document.querySelector("body");
         const observer = new MutationObserver(mutations => {
