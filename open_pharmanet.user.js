@@ -40,7 +40,7 @@ const CLINIC_ID_INDEX = 5;
         let newListElement = medication_div.querySelector("li");
         let copyNewListElement = newListElement.cloneNode(true);
         let openButton = copyNewListElement.querySelector("button");
-        openButton.innerText = "Open Pharmanet";
+        openButton.innerText = "Open Pharmanet 2.0";
         medication_div.querySelector("ul").insertBefore(copyNewListElement, newListElement);
         copyNewListElement.addEventListener("click", openWindowWithPost);
     }
