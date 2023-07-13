@@ -208,7 +208,7 @@ TAKE 1 TABLET TWICE DAILY (START IF SYSTOLIC BLOOD PRESSURE IS GREATER THAN 100)
  
 
 Med reconciliation
-4567 111 222 - MARY U DOE - 1955 Jan 02 - Female
+1234 123 123 - MARY U DOE - 1955 Jan 02 - Female
 Please check the medications you want included on the report,
 then click the Continue Button.
 Drugs are listed in alphabetic order
@@ -268,100 +268,49 @@ TAKE 1 TABLET ONCE DAILY
 
  `
 
-function parseMedicalData(dataString) {
-    function parseMedicationLines(isCurrent, lines){
-        const medication = {
-            current: isCurrent,
-            DIN: undefined,
-            Name: undefined,
-            Instruction: undefined
-        };
-        medication.DIN = lines[0].trim();
-        medication.Name = lines[1].trim();
-        medication.Instruction = lines[5].trim();
-        return medication;
-    }
+function extractDoseFromNameTest(){
+    const TEST_NAME = 'extractDoseFromNameTest';
 
-    //Given the input string split into lines, return true if represents data copied form Pharmanet data, false otherwise
-    function isValidMedicalData(lines){
-        return (lines && lines.length > 0 && lines[0].trim().startsWith("Request issued") && lines.length > 13);
-    }
-
-    const CURRENT_MR_LENGTH = 8;
-    const NON_CURRENT_MR_LENGTH = 6;
-    function isDINOrContinue(string) {
-        let trimmed = string.trim();
-        return /^\d+$/.test(trimmed) || trimmed === 'Continue';
-    }
-
-    const medicalData = {
-        PHN: '',
-        name: '',
-        birthDate: '',
-        gender: '',
-        medications: []
-    };
-
-    const lines = dataString.split('\n');
-
-    //Validate the input and return early if not valid
-    if(!isValidMedicalData(lines)){ return null; }
-
-    let isParsingMedications = false;
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-
-        if (line === 'Continue') {
-            if (isParsingMedications) {
-                break; // Stop parsing once second "Continue" line is found
-            } else {
-                isParsingMedications = true; // Start parsing medical records
-                continue;
-            }
+    const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/
+    function extractDoseFromName(name){
+        const match = name.match(MEDICATION_DOSAGE_REGEX);
+        if (match && match.length > 0) {
+            return match[0].replace(/\s/g, "");
         }
+        return null;
+    }
 
-        if (!isParsingMedications) {
-            const patientInfoRegex = /(\d{4} \d{3} \d{3}) - (.+) - (\d{4} [a-zA-Z]{3} \d{2}) - (\w+)/;
-            const patientInfoMatch = patientInfoRegex.exec(line);
+    let testCases = [
+        { name: 'DIGOXIN    0.125 MG TABLET', expected: '0.125MG' },
+        { name: '	LEVOTHYROXINE SODIUM    25 MCG TABLET', expected: '25MCG' },
+        { name: 'DILTIAZEM HCL    240 MG CAP SA 24H', expected: '240MG' },
+        { name: 'BOBOB  29.8 MCG', expected: '29.8MCG' },
+        { name: 'BOBOB  29.8 MCG MG', expected: '29.8MCG' },
+        { name: 'JFKDSJFK 2222222.0 MG', expected: '2222222.0MG' },
+        { name: '10 MG fjdkls fjkdlsajfkls', expected: '10MG' },
+        { name: 'jkfdlsa fdkjlaf dsl 10.8 MCG', expected: '10.8MCG' },
+        { name: 'fdsjaklfds 22.9 MG 32890jfksfds kfsj ', expected: '22.9MG' },
+        { name: '23490 9230439 27.8 MG 89089kflds 99', expected: '27.8MG' },
+        { name: '18.9 MCG 19 MG', expected: '18.9MCG' },
+        { name: '18.9 19 MG', expected: '19MG' },
+        { name: '1MG', expected: '1MG' },
+        { name: '19MCG', expected: '19MCG' },
+        { name: '23490 9230439 27.8 MR 89089kflds 99', expected: null },
+        { name: 'jkflfkdslfds jfdksalfjkds 898989 jkfdsjakfd', expected: null },
+        { name: ' . MG fkslfljds fsdafds', expected: null },
+        { name: '', expected: null },
+        { name: '     ', expected: null },
+        { name: 'MG', expected: null },
+        { name: 'MCG', expected: null },
+    ]
 
-            if (patientInfoMatch) {
-                medicalData.PHN = patientInfoMatch[1];
-                medicalData.name = patientInfoMatch[2];
-                medicalData.birthDate = patientInfoMatch[3];
-                medicalData.gender = patientInfoMatch[4];
-            }
-        } else {
-
-            let isCurrent;
-            let medicationDataLines;
-
-            if (i + CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + CURRENT_MR_LENGTH])){
-                isCurrent = true;
-                medicationDataLines = lines.slice(i, i + CURRENT_MR_LENGTH);
-            } else if (i + NON_CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + NON_CURRENT_MR_LENGTH])){
-                isCurrent = false;
-                medicationDataLines = lines.slice(i, i + NON_CURRENT_MR_LENGTH);
-            } else {
-                break;
-            }
-
-            if (isCurrent) { medicationDataLines.splice(1,2); }
-
-            let medication = parseMedicationLines(isCurrent, medicationDataLines);
-
-            i += (isCurrent ? CURRENT_MR_LENGTH : NON_CURRENT_MR_LENGTH) - 1;
-
-            medicalData.medications.push(medication);
+    for (let i = 0; i < testCases.length; i++) {
+        let test = testCases[i];
+        let actual = extractDoseFromName(test.name)
+        if(actual !== test.expected){
+            return TEST_NAME + " FAILED! Expected: " + test.expected + " but actual: " + actual + "\nFor input: " + JSON.stringify(test);
         }
     }
-
-    return medicalData;
+    return TEST_NAME + " PASSED!"
 }
-
-let result = parseMedicalData(PATIENT_WITH_DECIMAL_AND_TEMP_DRUG);
-console.log(result);
-
-
-let result2 = parseMedicalData(PATIENT_WITH_MCG_AND_DECIMAL);
-console.log(result2);
+console.log(extractDoseFromNameTest());

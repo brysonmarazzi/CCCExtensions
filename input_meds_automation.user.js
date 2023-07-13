@@ -14,6 +14,8 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1/';
 const CLINIC_ID_INDEX = 5;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
+const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/
+
 
 'use strict';
 
@@ -122,7 +124,7 @@ function insertMedications(aryaMedications){
 
 //Extract the MG dosage from the name and remove the space. Null if doesn't exist.
 function extractDoseFromName(name){
-    const match = name.match(/(\d+)\s+MG/);
+    const match = name.match(MEDICATION_DOSAGE_REGEX);
     if (match && match.length > 0) {
         return match[0].replace(/\s/g, "");
     }
@@ -138,11 +140,20 @@ function extractFrequencyFromInstruction(instruction){
 }
 
 function extractSearchWord(medication){
-    return medication.name.split(" ")[0];
+    return medication.Name.split(" ")[0];
 }
 
 // Given a medication, check for suggestion matches
 // Based on drug name and dosage
+// Example: 
+/*
+    const medication = {
+        current: false,
+        DIN: '898980809',
+        Name: 'DIGOXIN    0.125 MG TABLET',
+        Instruction: '*DAILY DISPENSE* TAKE 3 TABLETS ORALLY ONCE DAILY',
+    };
+*/
 function lookForSuggestionMatch(medication){
 
     // Get the first word from the Name
