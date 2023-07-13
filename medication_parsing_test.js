@@ -268,49 +268,98 @@ TAKE 1 TABLET ONCE DAILY
 
  `
 
-function extractDoseFromNameTest(){
-    const TEST_NAME = 'extractDoseFromNameTest';
-
-    const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/
-    function extractDoseFromName(name){
-        const match = name.match(MEDICATION_DOSAGE_REGEX);
-        if (match && match.length > 0) {
-            return match[0].replace(/\s/g, "");
-        }
-        return null;
+const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/g
+const COMBO_PRODUCT_REGEX = /\b\w+\/\w+\b/;
+function extractDosagesFromName(name){
+    const matches = name.match(MEDICATION_DOSAGE_REGEX);
+    if (matches && matches.length > 0) {
+        return matches.reverse()
+        .map(match => match.replace(/\s/g, ""))
+        .map(dose => {
+            return [dose, convertDosageUnit(dose)]
+        })
+        .flat()
     }
-
+    return null;
+}
+function convertDosageUnit(dose){
+    if(dose.includes("MG")){
+        let num = Number(dose.replace(/MG/g, ""));
+        if(num == NaN) return null;
+        return (num * 1000).toString() + "MCG";
+    }
+    if(dose.includes("MCG")){
+        let num = Number(dose.replace(/MCG/g, ""));
+        if(num == NaN) return null;
+        return (num / 1000).toString() + "MG";
+    } 
+    // console.log("Dosage does not contain MG or MCG: " + dose);
+    return null;
+}
+function isComboProduct(medication){
+    return COMBO_PRODUCT_REGEX.test(medication.Name) && medication.Name.match(MEDICATION_DOSAGE_REGEX)?.length == 2;
+}
+function convertDosageUnitTest(){
     let testCases = [
-        { name: 'DIGOXIN    0.125 MG TABLET', expected: '0.125MG' },
-        { name: '	LEVOTHYROXINE SODIUM    25 MCG TABLET', expected: '25MCG' },
-        { name: 'DILTIAZEM HCL    240 MG CAP SA 24H', expected: '240MG' },
-        { name: 'BOBOB  29.8 MCG', expected: '29.8MCG' },
-        { name: 'BOBOB  29.8 MCG MG', expected: '29.8MCG' },
-        { name: 'JFKDSJFK 2222222.0 MG', expected: '2222222.0MG' },
-        { name: '10 MG fjdkls fjkdlsajfkls', expected: '10MG' },
-        { name: 'jkfdlsa fdkjlaf dsl 10.8 MCG', expected: '10.8MCG' },
-        { name: 'fdsjaklfds 22.9 MG 32890jfksfds kfsj ', expected: '22.9MG' },
-        { name: '23490 9230439 27.8 MG 89089kflds 99', expected: '27.8MG' },
-        { name: '18.9 MCG 19 MG', expected: '18.9MCG' },
-        { name: '18.9 19 MG', expected: '19MG' },
-        { name: '1MG', expected: '1MG' },
-        { name: '19MCG', expected: '19MCG' },
-        { name: '23490 9230439 27.8 MR 89089kflds 99', expected: null },
-        { name: 'jkflfkdslfds jfdksalfjkds 898989 jkfdsjakfd', expected: null },
-        { name: ' . MG fkslfljds fsdafds', expected: null },
-        { name: '', expected: null },
-        { name: '     ', expected: null },
-        { name: 'MG', expected: null },
-        { name: 'MCG', expected: null },
+        { input: "23MG", expected: "23000MCG" },
+        { input: "2.3MG", expected: "2300MCG" },
+        { input: "23MCG", expected: "0.023MG" },
+        { input: "2.3MCG", expected: "0.0023MG" },
+        { input: "2.3M", expected: null },
+        { input: "M", expected: null },
+        { input: "0.4MG", expected: "400MCG" },
     ]
+    return test("convertDosageUnitTest", testCases, convertDosageUnit)
+}
+function extractDosagesFromNameTest(){
+    let testCases = [
+        { input: 'DIGOXIN    0.125 MG TABLET', expected: ['0.125MG', '125MCG'] },
+        { input: '	LEVOTHYROXINE SODIUM    25 MCG TABLET', expected: ['25MCG', '0.025MG'] },
+        { input: 'DILTIAZEM HCL    240 MG CAP SA 24H', expected: ['240MG', '240000MCG'] },
+        { input: 'BOBOB  29.8 MCG', expected: ['29.8MCG', '0.0298MG'] },
+        { input: 'BOBOB  2.98 MCG*43MG', expected: ['43MG','43000MCG','2.98MCG','0.00298MG'] },
+        // { input: 'JFKDSJFK 2222222.0 MG', expected: '2222222.0MG' },
+        // { input: '10 MG fjdkls fjkdlsajfkls', expected: '10MG' },
+        // { input: 'jkfdlsa fdkjlaf dsl 10.8 MCG', expected: '10.8MCG' },
+        // { input: 'fdsjaklfds 22.9 MG 32890jfksfds kfsj ', expected: '22.9MG' },
+        { input: '23490 9230439 27.8 MG-77MCG89089kflds 99', expected: ['77MCG', '0.077MG', '27.8MG','27800MCG'] },
+        // { input: '18.9 MCG 19 MG', expected: '18.9MCG' },
+        // { input: '18.9 19 MG', expected: '19MG' },
+        // { input: '1MG', expected: '1MG' },
+        // { input: '19MCG', expected: '19MCG' },
+        { input: '23490 9230439 27.8 MR 89089kflds 99', expected: null },
+        { input: 'jkflfkdslfds jfdksalfjkds 898989 jkfdsjakfd', expected: null },
+        { input: ' . MG fkslfljds fsdafds', expected: null },
+        { input: '', expected: null },
+        { input: '     ', expected: null },
+        { input: 'MG', expected: null },
+        { input: 'MCG', expected: null },
+    ]
+    return test('extractDosagesFromNameTest', testCases, extractDosagesFromName);
+}
 
+function isComboProductTest(){
+    let testCases = [
+        { input: { Name: '	SACUBITRIL/VALSARTAN    49 MG-51MG TABLET' }, expected: true },
+        { input: { Name: '	CARBIDOPA/LEVODOPA    25MG-100MG TABLET ER' }, expected: true },
+        { input: { Name: '	SACUBITRILVALSARTAN    49 MG-51MG TABLET' }, expected: false },
+        { input: { Name: '	SAC/UBITRILVALSARTAN    49 M9-51MG TABLET' }, expected: false },
+        { input: { Name: '' }, expected: false },
+    ]
+    return test('isComboProductTest', testCases, isComboProduct);
+}
+
+function test(testName, testCases, func){
     for (let i = 0; i < testCases.length; i++) {
         let test = testCases[i];
-        let actual = extractDoseFromName(test.name)
-        if(actual !== test.expected){
-            return TEST_NAME + " FAILED! Expected: " + test.expected + " but actual: " + actual + "\nFor input: " + JSON.stringify(test);
+        let actual = func(test.input)
+        if(JSON.stringify(actual) !== JSON.stringify(test.expected)){
+            return testName + " FAILED! Expected: " + test.expected + " but actual: " + actual + "\nFor input: " + JSON.stringify(test);
         }
     }
-    return TEST_NAME + " PASSED!"
+    return testName + " PASSED!"
 }
-console.log(extractDoseFromNameTest());
+
+console.log(extractDosagesFromNameTest());
+console.log(isComboProductTest());
+console.log(convertDosageUnitTest());

@@ -14,8 +14,8 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1/';
 const CLINIC_ID_INDEX = 5;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
-const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/
-
+const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/g
+const COMBO_PRODUCT_REGEX = /\b\w+\/\w+\b/;
 
 'use strict';
 
@@ -123,11 +123,31 @@ function insertMedications(aryaMedications){
 }
 
 //Extract the MG dosage from the name and remove the space. Null if doesn't exist.
-function extractDoseFromName(name){
-    const match = name.match(MEDICATION_DOSAGE_REGEX);
-    if (match && match.length > 0) {
-        return match[0].replace(/\s/g, "");
+function extractDosagesFromName(name){
+    const matches = name.match(MEDICATION_DOSAGE_REGEX);
+    if (matches && matches.length > 0) {
+        return matches.reverse()
+        .map(match => match.replace(/\s/g, ""))
+        .map(dose => {
+            return [dose, convertDosageUnit(dose)]
+        })
+        .flat()
     }
+    return null;
+}
+
+function convertDosageUnit(dose){
+    if(dose.includes("MG")){
+        let num = Number(dose.replace(/MG/g, ""));
+        if(num == NaN) return null;
+        return (num * 1000).toString() + "MCG";
+    }
+    if(dose.includes("MCG")){
+        let num = Number(dose.replace(/MCG/g, ""));
+        if(num == NaN) return null;
+        return (num / 1000).toString() + "MG";
+    } 
+    console.log("Dosage does not contain MG or MCG: " + dose);
     return null;
 }
 
@@ -139,8 +159,13 @@ function extractFrequencyFromInstruction(instruction){
     return "PRN";
 }
 
+function isComboProduct(medication){
+    return COMBO_PRODUCT_REGEX.test(medication.Name) && medication.Name.match(MEDICATION_DOSAGE_REGEX)?.length == 2;
+}
+
 function extractSearchWord(medication){
-    return medication.Name.split(" ")[0];
+    var line = isComboProduct(medication) ? medication.Trade : medication.Name;
+    return line.split(" ")[0];
 }
 
 // Given a medication, check for suggestion matches
@@ -151,6 +176,7 @@ function extractSearchWord(medication){
         current: false,
         DIN: '898980809',
         Name: 'DIGOXIN    0.125 MG TABLET',
+        Trade: 'Aa-Levocarb Cr   AA PHARMA INC.',
         Instruction: '*DAILY DISPENSE* TAKE 3 TABLETS ORALLY ONCE DAILY',
     };
 */
@@ -160,14 +186,21 @@ function lookForSuggestionMatch(medication){
     let searchTerm = extractSearchWord(medication);
 
     //Extract the dosage from the name if exists. Format as 50MG or 20MG or null.
-    let dosage = extractDoseFromName(medication.Name);
+    let dosages = extractDosagesFromName(medication.Name);
 
-    if (!dosage){ console.log("DOSAGE NOT FOUND IN DRUG NAME: " + medication.Name) }
+    if (!dosages){ console.log("DOSAGE NOT FOUND IN DRUG NAME: " + medication.Name) }
 
     return fetch(ARYA_URL_ROOT + 'drugs?limit=50&offset=0&search=' + searchTerm, { method: 'GET', })
         .then(response => response.json())
-        .then(matches => matches.find(match => match.strength_with_unit === dosage && dosage ))
-        .then(match => { if(match === undefined){ return null } else { return match } })
+        .then(suggestions => { 
+            if(!suggestions || !dosages) return null;
+            for (let i = 0; i < dosages.length; i++) {
+                let dosage = dosages[i];
+                let foundSuggestion = suggestions.find(suggestion => suggestion.strength_with_unit === dosage);
+                if(foundSuggestion !== undefined) return foundSuggestion;
+            }
+            return null;
+        })
         .catch(error => console.error(error));
 }
 
@@ -194,10 +227,12 @@ function parseMedicalData(dataString) {
             current: isCurrent,
             DIN: undefined,
             Name: undefined,
+            Trade: undefined,
             Instruction: undefined
         };
         medication.DIN = lines[0].trim();
         medication.Name = lines[1].trim();
+        medication.Trade = lines[2].trim();
         medication.Instruction = lines[5].trim();
         return medication;
     }
