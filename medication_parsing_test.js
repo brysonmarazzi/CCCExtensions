@@ -299,6 +299,72 @@ function convertDosageUnit(dose){
 function isComboProduct(medication){
     return COMBO_PRODUCT_REGEX.test(medication.Name) && medication.Name.match(MEDICATION_DOSAGE_REGEX)?.length == 2;
 }
+function extractFrequencyFromInstruction(instruction){
+    if(instruction.includes("TAKE")){
+        let partAfterTake = instruction.split("TAKE")[1];
+        if(partAfterTake.includes("TABLET") || partAfterTake.includes("CAPSULE")){
+            const pattern = /\b(?:TABLET|TABLETS|CAPSULE|CAPSULES)\b/gi;
+            let amount = partAfterTake.split(pattern)[0].trim();
+            let partAfterItem = partAfterTake.split(pattern)[1];
+            if(partAfterItem.includes("A DAY") || partAfterItem.includes("DAILY")){
+                let partBefore = undefined;
+                if(partAfterItem.split("DAILY").length > 0){
+                    partBefore = partAfterItem.split("DAILY")[0];
+                } else {
+                    partBefore = partAfterItem.split("A DAY")[0];
+                }
+                if(partBefore.includes("ONCE")){ return amount + " - Daily"; }
+                if(partBefore.includes("TWICE")){ return amount + " - BID"; }
+                if(partBefore.includes("THREE")){ return amount + " - TID"; }
+                if(partBefore.includes("FOUR")){ return amount + " - QID"; }
+                if(partBefore.includes("1")){ return amount + " - Daily"; }
+                if(partBefore.includes("2")){ return amount + " - BID"; }
+                if(partBefore.includes("3")){ return amount + " - TID"; }
+                if(partBefore.includes("4")){ return amount + " - QID"; }
+                if(partBefore.includes("AS NEEDED")){ return amount + " - PRN"; }
+            }
+            return amount + " - Daily"
+        }
+    }
+    return "Variable dose";
+}
+
+function extractFrequencyFromInstructionTest(){
+
+    let frequencies = [
+        { input: '*DAILY DISPENSE* TAKE 2 TABLETS ORALLY THREE TIMES DAILY', expected: '2 - TID' },
+        { input: '*DAILY DISPENSE* TAKE 1 TABLET ORALLY TWICE DAILY', expected: '1 - BID' },
+        { input: 'TAKE 1 TABLET TWICE DAILY (AT 8AM AND 8PM)', expected: '1 - BID' },
+        { input: 'TAKE 1/2 TABLET TWICE A DAY', expected: '1/2 - BID' },
+        { input: 'TAKE 1/2 TABLET TWICE A DAY WITH FOOD', expected: '1/2 - BID' },
+        { input: '(ACETAMINOPHEN 100MG/ML ) (SHAKE WELL ) THEN GIVE 6.5 MILLILITERS (=650MG) FOU', expected: 'Variable dose' },
+        { input: '* DAILY DISPENSE* TAKE ONE TABLET ORALLY ONCE DAILY ( NEW MED)', expected: 'ONE - Daily' },
+        { input: 'TAKE 1 TABLET ONCE A DAY', expected: '1 - Daily' },
+        { input: '*DAILY DISPENSE* TAKE 1 TABLET ORALLY ONCE DAILY', expected: '1 - Daily' },
+        { input: '*DAILY DISPENSE* TAKE 3 TABLETS ORALLY ONCE DAILY', expected: '3 - Daily' },
+        { input: '*DAILY DISPENSE* TAKE 3 TABLETS ORALLY ONCE DAILY (HOLD IF SBP LESS THAN 90 AND', expected: '3 - Daily' },
+        { input: 'TAKE 1 TABLET TWICE DAILY', expected: '1 - BID' },
+        { input: 'TAKE 1 TABLET ONCE A DAY ( FOR FLUID RETENTION )', expected: '1 - Daily' },
+        { input: '(MAY 16 - JUNE 07 )DAILY DISPENSE* TAKE 1/2 TABLET ORALLY FOUR TIMES DAILY AS NE', expected: '1/2 - QID' },
+        { input: '(MAY 16 - JUNE 24)DAILY DISPENSE* TAKE 1/2 TABLET ORALLY FOUR TIMES DAILY AS NEE', expected: '1/2 - QID' },
+        { input: '*DAILY DISPENSE* TAKE 1/2 TABLET ORALLY FOUR TIMES DAILY AS NEEDED (4 DOSES IN S', expected: '1/2 - QID' },
+        { input: '*DAILY DISPENSE* TAKE 1 TABLET ORALLY ONCE DAILY {LEVOTHYROXINE}', expected: '1 - Daily' },
+        { input: '04-574-3331 MEDICATION REVIEW PHARMACITY DRUGSTORE #3 **(MR-S)**', expected: 'Variable dose' },
+        { input: '*DAILY DISPENSE* TAKE 1/2 TABLET ORALLY TWICE DAILY', expected: '1/2 - BID' },
+        { input: 'TAKE 1 OR 2 CAPSULES 3 TIMES A DAY AS NEEDED', expected: '1 OR 2 - TID' },
+        { input: 'TAKE 1 TABLET ONCE A DAY', expected: '1 - Daily' },
+        { input: '*DAILY DISPENSE* TAKE 1 TABLET ORALLY TWICE DAILY (SACUBATRIL/VALSARTAN)', expected: '1 - BID' }, // { input: 'TAKE 1 TABLET TWICE DAILY', expected: '1 - BID' },
+        { input: 'TAKE 1 TABLET TWICE DAILY (START IF SYSTOLIC BLOOD PRESSURE IS GREATER THAN 100)', expected: '1 - BID' },
+        { input: 'TAKE 1 OR 2 CAPSULES 3 TIMES A DAY', expected: '1 OR 2 - TID' },
+        { input: '*DAILY DISPENSE* TAKE 1/2 TABLET ORALLY AT BEDTIME', expected: '1/2 - Daily' },
+        { input: 'RNDOM SJKJDFKS', expected: 'Variable dose' },
+        { input: '', expected: 'Variable dose' },
+        { input: 'DAILY DAILY DAILY', expected: 'Variable dose' },
+        { input: 'ONCE', expected: 'Variable dose' },
+        { input: 'TAKE', expected: 'Variable dose' },
+    ]
+    return test("extractFrequencyFromInstructionTest", frequencies, extractFrequencyFromInstruction);
+}
 function convertDosageUnitTest(){
     let testCases = [
         { input: "23MG", expected: "23000MCG" },
@@ -350,16 +416,20 @@ function isComboProductTest(){
 }
 
 function test(testName, testCases, func){
+    let fail = false;
     for (let i = 0; i < testCases.length; i++) {
         let test = testCases[i];
         let actual = func(test.input)
         if(JSON.stringify(actual) !== JSON.stringify(test.expected)){
-            return testName + " FAILED! Expected: " + test.expected + " but actual: " + actual + "\nFor input: " + JSON.stringify(test);
+             console.log(testName + " FAILED! Expected: " + test.expected + " but actual: " + actual + "\nFor input: " + JSON.stringify(test));
+             fail = true;
         }
     }
-    return testName + " PASSED!"
+    if(fail) return testName + "FAILED!";
+    else return testName + " PASSED!"
 }
 
 console.log(extractDosagesFromNameTest());
 console.log(isComboProductTest());
 console.log(convertDosageUnitTest());
+console.log(extractFrequencyFromInstructionTest());

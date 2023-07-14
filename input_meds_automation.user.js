@@ -34,7 +34,7 @@ document.addEventListener('keydown', function(event) {
                 })
                     .catch(error => console.error(error));
             } else {
-                warningAlert("Pasted Pharmanet string is incorrectly formatted!")
+                warningAlert("Invalid paste detected!", "Detected paste does not look like Med Rec Pharmanet text!")
             }
         }).catch(function(error) {
             console.error('Failed to read clipboard data:', error);
@@ -60,9 +60,10 @@ function handlePatientMedicalRecords(patientData, medicalData){
     console.log("Handle Medical Records");
     console.log(patientData);
     console.log(medicalData);
-    let medicationPromises = medicalData.medications.map(medication => {
-        return lookForSuggestionMatch(medication)
-        .then(match => { medication.match = match; return medication; })
+    let medicationPromises = medicalData.medications.map(async medication => {
+        const match = await lookForSuggestionMatch(medication);
+        medication.match = match;
+        return medication;
     })
     Promise.all(medicationPromises).then(medications => {
         console.log("Promised all the medications: ");
@@ -76,23 +77,16 @@ function handlePatientMedicalRecords(patientData, medicalData){
         return matchedMedications;
     })
     .then(medicationsToInsert => {
-        // Prompt the user if insertion is good
-        const sep = "\n===============================";
-        const message = "Inserting into Patient: " + patientData.label + sep +
-                "\nPress [OK] or [ENTER KEY] to insert " + medicationsToInsert.length + " medical records" +
-                "\nClick [CANCEL] to cancel" + sep +
-                "\nNOTE: This feature is still a WORK IN PROGRESS and won't always include every medical record from the paste!" ;
-        const userInput = window.prompt(message);
-
-        if (userInput === null) {
-            // User clicked Cancel or closed the prompt
-            warningAlert("Cancelled inserting medications records!")
-        } else {
-            // User pressed Enter key
-            console.log("Constructing then inserting into arya");
-            let aryaMeds = constructMedications(patientData, medicationsToInsert)
-            insertMedications(aryaMeds);
-        }
+        // User pressed Enter key
+        console.log("Constructing then inserting into arya");
+        let aryaMeds = constructMedications(patientData, medicationsToInsert)
+        insertMedications(aryaMeds)
+        .then(insertedRecords => {
+            console.log(insertedRecords);
+            let title = "Successfully inserted " + insertedRecords.length + " medications! Refresh the page to see."
+            let message = "Patient: " + patientData.label;
+            successAlert(title, message);
+        })
     });
 }
 
@@ -116,10 +110,7 @@ function constructMedications(patientData, medications){
 function insertMedications(aryaMedications){
     console.log("Inserting medications into Arya");
     let insertPromises = aryaMedications.map(medication => insertMedication(medication));
-    return Promise.all(insertPromises).then(insertedRecords => {
-        console.log(insertedRecords);
-        successAlert("Successfully inserted " + insertedRecords.length + " medical records. Refresh to see.");
-    }).catch(error => console.error(error));
+    return Promise.all(insertPromises).catch(error => console.error(error));
 }
 
 //Extract the MG dosage from the name and remove the space. Null if doesn't exist.
@@ -152,11 +143,33 @@ function convertDosageUnit(dose){
 }
 
 function extractFrequencyFromInstruction(instruction){
-    if(instruction.includes("ONCE")){ return "Daily"; }
-    if(instruction.includes("TWICE")){ return "BID"; }
-    if(instruction.includes("THREE")){ return "TID"; }
-    if(instruction.includes("FOUR")){ return "QID"; }
-    return "PRN";
+    if(instruction.includes("TAKE")){
+        let partAfterTake = instruction.split("TAKE")[1];
+        if(partAfterTake.includes("TABLET") || partAfterTake.includes("CAPSULE")){
+            const pattern = /\b(?:TABLET|TABLETS|CAPSULE|CAPSULES)\b/gi;
+            let amount = partAfterTake.split(pattern)[0].trim();
+            let partAfterItem = partAfterTake.split(pattern)[1];
+            if(partAfterItem.includes("A DAY") || partAfterItem.includes("DAILY")){
+                let partBefore = undefined;
+                if(partAfterItem.split("DAILY").length > 0){
+                    partBefore = partAfterItem.split("DAILY")[0];
+                } else {
+                    partBefore = partAfterItem.split("A DAY")[0];
+                }
+                if(partBefore.includes("ONCE")){ return amount + " - Daily"; }
+                if(partBefore.includes("TWICE")){ return amount + " - BID"; }
+                if(partBefore.includes("THREE")){ return amount + " - TID"; }
+                if(partBefore.includes("FOUR")){ return amount + " - QID"; }
+                if(partBefore.includes("1")){ return amount + " - Daily"; }
+                if(partBefore.includes("2")){ return amount + " - BID"; }
+                if(partBefore.includes("3")){ return amount + " - TID"; }
+                if(partBefore.includes("4")){ return amount + " - QID"; }
+                if(partBefore.includes("AS NEEDED")){ return amount + " - PRN"; }
+            }
+            return amount + " - Daily"
+        }
+    }
+    return "Variable dose";
 }
 
 function isComboProduct(medication){
@@ -320,17 +333,26 @@ function getMedicationList(patient_id){
     .then(data => data.medications)
 }
 
-function warningAlert(message){
-    showNonBlockingAlert(message, WARNING_COLOR);
+function warningAlert(title, message){
+    showNonBlockingAlert(title, message, WARNING_COLOR);
 }
-function successAlert(message){
-    showNonBlockingAlert(message, SUCCESS_COLOR);
+function successAlert(title, message){
+    showNonBlockingAlert(title, message, SUCCESS_COLOR);
 }
-function showNonBlockingAlert(message, color) {
+function showNonBlockingAlert(titletext, messagetext, color) {
     const alertDiv = document.createElement('div');
-    alertDiv.innerHTML = message;
+    // Create the title element
+    const title = document.createElement("h2");
+    title.textContent = titletext;
+
+    // Create the message element
+    const message = document.createElement("p");
+    message.textContent = messagetext;
+    // Append the title and message elements to the div
+    alertDiv.appendChild(title);
+    alertDiv.appendChild(message);
     alertDiv.style.position = 'fixed';
-    alertDiv.style.top = '96%';
+    alertDiv.style.top = '94%';
     alertDiv.style.left = '50%';
     alertDiv.style.transform = 'translate(-50%, -50%)';
     alertDiv.style.backgroundColor = color;
@@ -343,10 +365,13 @@ function showNonBlockingAlert(message, color) {
     
     document.body.appendChild(alertDiv);
     
+    let seconds = (messagetext.split(" ").length / 3) * 1000
+    console.log(seconds)
+    
     setTimeout(function() {
         alertDiv.style.opacity = '0';
         setTimeout(function() {
             document.body.removeChild(alertDiv);
         }, 500);
-    }, 2000); // Show the alert for 2 seconds
+    }, seconds); // Show the alert for 2 seconds
 }
