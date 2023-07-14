@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Medications Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      0.0
+// @version      1.0
 // @description  Automate insertion of medical data into Arya
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
