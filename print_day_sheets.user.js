@@ -20,6 +20,7 @@ const DATE_SELECTION_ID = "select_day";
 const FAKE_PATIENT = "INDIRECTCAREHOURS";
 
 'use strict';
+overlay = null;
 window.onload = observeUrlChange(IS_SCHEDULE_PAGE_REGEX, onSchedulePage);
 
 function onSchedulePage(){
@@ -46,7 +47,6 @@ function createAndFetchPDF(uuid){
     .then(response => response.json())
     .then(json => json.uuid)
     .then(fetchFile)
-    .catch(e => console.error(e));
 }
 
 function fetchFile(pdf_uuid){
@@ -54,13 +54,15 @@ function fetchFile(pdf_uuid){
     return fetch(url, { method: 'GET' })
         .then(response => response.blob())
         .then(blob => { return {'uuid':pdf_uuid, 'pdfBlob':blob} })
-        .catch(error => console.error(error))
 }
 
 function handleButtonClick(){
     window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
     window.current_selected_name = getCurrentAdminUser();
-
+    displaySpinner();
+    setTimeout(function(){
+        window.spinner_text = "Still working to create one giant PDF!";
+    }, 6000)
     getCurrentAdminData()
     .then(data => {
         if(data){
@@ -68,7 +70,7 @@ function handleButtonClick(){
             return data.uuid;
         } else {
             warningAlert("Can't Print Progress Notes for " + window.current_selected_name +"!","Please select an individual Doctor's schedule");
-            throw Error("Can't find data for currently selected user");
+            throw Error("Can't find data for currently selected user: " + window.current_selected_name);
         }
     })
     .then(getPatientsForTheDay)
@@ -86,7 +88,12 @@ function handleButtonClick(){
     .then(createAndPrintGiantPdf)
     .then(pdfIds => Promise.all(pdfIds.map(deletePdf)))
     .then(_ => successAlert("All Forms successfully deleted!"))
-    .catch(error => console.error(error))
+    .catch(handleError)
+}
+
+function handleError(error){
+    removeSpinner();
+    console.error(error);
 }
 
 function formatDate(input) {
@@ -149,7 +156,6 @@ function getPatientsForTheDay(userId){
         .then(response => response.json())
         .then(scheduleItems => scheduleItems.filter(item => item.patient.last_name !== FAKE_PATIENT))
         .then(scheduleItems => scheduleItems.map(item => item.patient_id))
-        .catch(error => console.error(error))
 }
 
 function getCurrentAdminUser(){
@@ -165,7 +171,6 @@ function getCurrentAdminData(){
         .then(response => response.json())
         .then(data => data.users)
         .then(users => users.find(user => user.clinical_user == true && user.first_name === first && user.last_name === last))
-        .catch(error => console.error(error))
 }
 
 function observeUrlChange(urlRegex, callback){
@@ -227,35 +232,9 @@ const createAndPrintGiantPdf = async (pdfObjects) => {
 
     // Save the merged PDF as a new blob
     let giantBlob = await mergedPdfDoc.save();
+    removeSpinner();
     promptPrint(giantBlob)
     return pdfObjects.map(obj => obj.uuid);
-};
-
-const printPDFsAsOne = async (blob1, blob2) => {
-  const { PDFDocument } = PDFLib;
-  // Load the PDF blobs
-  const pdfBytes1 = await blob1.arrayBuffer();
-  const pdfBytes2 = await blob2.arrayBuffer();
-
-  // Create PDFDocument instances
-  const pdfDoc1 = await PDFDocument.load(pdfBytes1);
-  const pdfDoc2 = await PDFDocument.load(pdfBytes2);
-
-  // Create a new PDFDocument
-  const mergedPdfDoc = await PDFDocument.create();
-
-  // Create a new page for the first PDF
-  const [page1] = await mergedPdfDoc.copyPages(pdfDoc1, [0]);
-  mergedPdfDoc.addPage(page1);
-
-  // Create a new page for the second PDF
-  const [page2] = await mergedPdfDoc.copyPages(pdfDoc2, [0]);
-  mergedPdfDoc.addPage(page2);
-
-  // Save the merged PDF as a new blob
-  const mergedPdfBytes = await mergedPdfDoc.save();
-
-  // Convert the merged PDF blob to a Blob object
 };
 
 function warningAlert(title, message){
@@ -298,4 +277,40 @@ function showNonBlockingAlert(titletext, messagetext, color) {
             document.body.removeChild(alertDiv);
         }, 500);
     }, seconds); // Show the alert for 2 seconds
+}
+function displaySpinner() {
+    overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+    overlay.style.display = 'flex';
+    overlay.style.justifyContent = 'center';
+    overlay.style.alignItems = 'center';
+    overlay.style.zIndex = '9999';
+
+    const svgString = `<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" width="64px" height="64px" viewBox="0 0 128 128" xml:space="preserve"><rect x="0" y="0" width="100%" height="100%" fill="#FFFFFF" /><g><circle cx="16" cy="64" r="16" fill="#000000" fill-opacity="1"/><circle cx="16" cy="64" r="16" fill="#555555" fill-opacity="0.67" transform="rotate(45,64,64)"/><circle cx="16" cy="64" r="16" fill="#949494" fill-opacity="0.42" transform="rotate(90,64,64)"/><circle cx="16" cy="64" r="16" fill="#cccccc" fill-opacity="0.2" transform="rotate(135,64,64)"/><animateTransform attributeName="transform" type="rotate" values="0 64 64;315 64 64;270 64 64;225 64 64;180 64 64;135 64 64;90 64 64;45 64 64" calcMode="discrete" dur="800ms" repeatCount="indefinite"></animateTransform></g></svg>`;
+
+    const text = document.createElement('p');
+    window.spinner_text = "Loading PDF to print"
+    text.textContent = window.spinner_text + '...'; // Replace with your desired text styling and content
+    text.style.fontFamily = 'Arial, sans-serif';
+    text.style.fontSize = '18px';
+    text.style.color = '#333333';
+
+    const spinner = document.createElement('div');
+    spinner.innerHTML = svgString;
+
+    overlay.appendChild(text);
+    overlay.appendChild(spinner);
+    document.body.appendChild(overlay);
+  }
+
+function removeSpinner() {
+if (overlay) {
+    document.body.removeChild(overlay);
+    overlay = null;
+}
 }
