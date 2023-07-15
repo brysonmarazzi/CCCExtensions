@@ -20,7 +20,7 @@ const DATE_SELECTION_ID = "select_day";
 const FAKE_PATIENT = "INDIRECTCAREHOURS";
 
 'use strict';
-overlay = null;
+let overlay = null;
 window.onload = observeUrlChange(IS_SCHEDULE_PAGE_REGEX, onSchedulePage);
 
 function onSchedulePage(){
