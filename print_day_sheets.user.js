@@ -5,7 +5,7 @@
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
-// @icon         https://img.favpng.com/1/6/10/test-clip-art-png-favpng-0Uabna2jkjdFeb0KLpnyAic5G.jpg
+// @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // @grant        none
 // @require      https://unpkg.com/pdf-lib
 // ==/UserScript==
