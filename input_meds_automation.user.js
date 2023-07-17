@@ -86,6 +86,12 @@ function handlePatientMedicalRecords(patientData, medicalData){
             let title = "Successfully inserted " + insertedRecords.length + " medications! Refresh the page to see."
             let message = "Patient: " + patientData.label;
             successAlert(title, message);
+            return insertedRecords;
+        })
+        .then(discontinueMedications)
+        .then(records => {
+            console.log("Discontinued Records: ");
+            console.log(records);
         })
     });
 }
@@ -105,11 +111,31 @@ function constructMedications(patientData, medications){
         }
     });
 }
+ function discontinueMedications(medications){
+    console.log("Inserting medications into Arya");
+    let discontinuePromises = medications.map(discontinueMedication);
+    return Promise.all(discontinuePromises);
+ }
+
+function discontinueMedication(aryaBackendMed){
+    [ "versions", "message" ].forEach(key => delete aryaBackendMed[key])
+    // Define the request payload
+    console.log("Discontinue: ")
+    console.log(aryaBackendMed)
+    const payload = { medication: aryaBackendMed };
+
+    // Make the POST request
+    return fetch(ARYA_URL_ROOT + 'clinics/' + window.clinic_id + '/medications/' + aryaBackendMed.uuid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(response => response.json());
+}
 
 //Given a list of arya medications, insert all into database
 function insertMedications(aryaMedications){
     console.log("Inserting medications into Arya");
-    let insertPromises = aryaMedications.map(medication => insertMedication(medication));
+    let insertPromises = aryaMedications.map(insertMedication);
     return Promise.all(insertPromises).catch(error => console.error(error));
 }
 
@@ -230,8 +256,7 @@ function insertMedication(medication){
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-    })
-        .then(response => response.json());
+    }).then(response => response.json());
 }
 
 function parseMedicalData(dataString) {
