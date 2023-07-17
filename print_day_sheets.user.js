@@ -19,6 +19,7 @@ const PROGRESS_NOTE_FORM_ID = "b36b4514-c069-44d1-9945-0500e2247f0c";
 const DATE_SELECTION_ID = "select_day";
 const FAKE_PATIENT = "INDIRECTCAREHOURS";
 const BUTTON_TEXT =  "Print Progress Notes";
+const PROGRESS_NOTES_BUTTON_ID = 'progress-notes-id';
 
 'use strict';
 let overlay = null;
@@ -30,12 +31,15 @@ function onSchedulePage(){
 
 function addPrintButtonToScreen(schedule){
     try {
-        let buttonsGroup = schedule.querySelector(".add-buttons-group");
-        let buttonContainer = buttonsGroup.lastChild;
-        let newButton = buttonContainer.lastChild.cloneNode(true);
-        newButton.innerText = BUTTON_TEXT;
-        newButton.addEventListener("click", handleButtonClick);
-        buttonContainer.appendChild(newButton);
+        if(!document.getElementById(PROGRESS_NOTES_BUTTON_ID)){
+            let buttonsGroup = schedule.querySelector(".add-buttons-group");
+            let buttonContainer = buttonsGroup.lastChild;
+            let newButton = buttonContainer.lastChild.cloneNode(true);
+            newButton.innerText = BUTTON_TEXT;
+            newButton.id = PROGRESS_NOTES_BUTTON_ID;
+            newButton.addEventListener("click", handleButtonClick);
+            buttonContainer.appendChild(newButton);
+        }
     } catch (e) {
         throw new AryaChangedError(e.message);
     }
