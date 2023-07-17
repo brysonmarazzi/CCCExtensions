@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      2.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -126,6 +126,7 @@ function isWithinTwoDays(dateString) {
 function handleButtonClick(){
     window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
     window.current_selected_name = getCurrentAdminUser();
+
     getCurrentAdminData()
     .then(data => {
         if(data && data.uuid){
@@ -153,7 +154,6 @@ function handleButtonClick(){
     })
     .then(createAndPrintGiantPdf)
     .then(pdfIds => Promise.all(pdfIds.map(deletePdf)))
-    .then(_ => successAlert("All Forms successfully deleted!"))
     // .then(_ => {
     //     console.log("ATTEMPTING TO VERIFY!");
     //     getCurrentAdminData()
@@ -162,6 +162,7 @@ function handleButtonClick(){
     //     .then(verifyCleanedUp)
     // })
     .catch(handleError)
+    .finally(removeSpinner);
 }
 
 function handleError(error){
@@ -170,7 +171,6 @@ function handleError(error){
     } else {
         warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
     }
-    removeSpinner();
     console.error(error);
 }
 
@@ -210,6 +210,10 @@ function promptPrint(pdfBytes){
     const mergedPdfUrl = URL.createObjectURL(mergedPdfBlob);
     // Open a new window/tab and load the merged PDF document
     const printWindow = window.open(mergedPdfUrl, '_blank');
+    if(!printWindow || printWindow.closed || typeof printWindow.closed=='undefined'){
+        alertEnableRedirects();
+        return;
+    }
     // Wait for the PDF to load, then trigger the print functionality
     printWindow.onload = function () {
         printWindow.print();
@@ -321,8 +325,7 @@ const createAndPrintGiantPdf = async (pdfObjects) => {
 
     // Save the merged PDF as a new blob
     let giantBlob = await mergedPdfDoc.save();
-    removeSpinner();
-    promptPrint(giantBlob)
+    promptPrint(giantBlob);
     return pdfObjects.map(obj => obj.uuid);
 };
 
@@ -409,6 +412,81 @@ function removeSpinner() {
         overlay = null;
     }
 }
+
+// Check if popups and redirects are enabled
+function alertEnableRedirects() {
+  // Create a blocking div
+  const blockingDiv = document.createElement('div');
+  blockingDiv.style.position = 'fixed';
+  blockingDiv.style.top = '0';
+  blockingDiv.style.left = '0';
+  blockingDiv.style.width = '100%';
+  blockingDiv.style.height = '100%';
+  blockingDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+  blockingDiv.style.zIndex = '9999';
+  blockingDiv.style.display = 'flex';
+  blockingDiv.style.justifyContent = 'center';
+  blockingDiv.style.alignItems = 'center';
+
+  // Create an inner div for content
+  const contentDiv = document.createElement('div');
+  contentDiv.style.backgroundColor = '#fff';
+  contentDiv.style.padding = '20px';
+  contentDiv.style.textAlign = 'center';
+
+  const failText = document.createElement('h3');
+  failText.textContent = "Opps! Printing the PDF is blocked!";
+
+  // Create text explaining the situation
+  const text = document.createElement('p');
+  text.textContent =
+    'Please enable popups and redirects to use this script.';
+
+  // Create additional text for checking the browser's address bar
+  const additionalText = document.createElement('p');
+  additionalText.textContent =
+    "Check your browser's address bar for a popup or redirect icon/button.";
+
+  // Create an image element
+  const image = document.createElement('img');
+  image.src =
+    'https://www.howtogeek.com/wp-content/uploads/2019/04/2019-04-17_12h32_07-2.png?trim=1,1&bg-color=000&pad=1,1';
+  image.style.maxWidth = '100%';
+  image.style.marginBottom = '20px';
+
+  // Create an OK button
+  const okButton = document.createElement('button');
+  okButton.textContent = 'OK';
+  okButton.style.padding = '10px 20px';
+  okButton.style.backgroundColor = '#007bff';
+  okButton.style.color = '#fff';
+  okButton.style.border = 'none';
+  okButton.style.cursor = 'pointer';
+  okButton.style.fontWeight = 'bold';
+
+  // Add event listener to the OK button
+  okButton.addEventListener('click', function () {
+    // Remove the blocking div when OK is clicked
+    blockingDiv.parentNode.removeChild(blockingDiv);
+  });
+
+  // Append elements to the content div
+  contentDiv.appendChild(failText);
+  contentDiv.appendChild(image);
+  contentDiv.appendChild(text);
+  contentDiv.appendChild(additionalText);
+  contentDiv.appendChild(okButton);
+
+  // Append the content div to the blocking div
+  blockingDiv.appendChild(contentDiv);
+
+  // Append the blocking div to the document body
+  document.body.appendChild(blockingDiv);
+}
+
+
+
+
 
 class UserError extends Error {
     constructor(title, message){
