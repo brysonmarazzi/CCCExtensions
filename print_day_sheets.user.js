@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      4.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -82,7 +82,7 @@ function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid){
            },
            {
             uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "ReferringPhysician")?.uuid,
-            value: window.current_selected_name,
+            value: "Dr. " + window.current_selected_name,
            }
         ]
     }
@@ -525,10 +525,6 @@ function alertEnableRedirects() {
   // Append the blocking div to the document body
   document.body.appendChild(blockingDiv);
 }
-
-
-
-
 
 class UserError extends Error {
     constructor(title, message){
