@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      3.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -54,9 +54,47 @@ function createAndFetchPDF(uuid){
         body: JSON.stringify(payload)
     })
     .then(response => response.json())
+    .then(createdResponse => { return updatePDFDoctorAndDate(createdResponse, uuid) })
     .then(json => json.uuid)
     .then(fetchFile)
 }
+
+function updatePDFDoctorAndDate(createdFormResponse, patientUuid){
+    console.log("Updating for uuid: " + createdFormResponse?.uuid);
+    let payload = { "form":createdPDFResponseToUpdateForm(createdFormResponse, patientUuid) }
+    return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + "/forms/" + createdFormResponse.uuid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+}
+
+function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid){
+    return {
+        uuid: createdFormResponse.uuid,
+        patient_id: patientUuid,
+        // Assume there is only one patient form document
+        form_lines_attributes: [
+           {
+            uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "CurrentDate")?.uuid,
+            value: getCurrentFormDate(),
+           },
+           {
+            uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "ReferringPhysician")?.uuid,
+            value: window.current_selected_name,
+           }
+        ]
+    }
+}
+
+function getCurrentFormDate() {
+    let selectedDate = getSelectedDateString();
+    let currentDate = toDateObject(selectedDate)
+    const options = { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' };
+    return currentDate.toLocaleDateString('en-US', options);
+}
+
 
 function fetchFile(pdf_uuid){
     let url = ARYA_URL_ROOT + "clinics/" + window.clinic_id + "/forms/"+ pdf_uuid + ".pdf"; 
@@ -147,7 +185,7 @@ function handleButtonClick(){
     // .then(verifyCleanedUp)
     .then(listOfPatientIds => { 
         if(listOfPatientIds && listOfPatientIds.length > 0){
-            displaySpinner("Loading Progress Notes for " + window.current_selected_name + " on " + getSelectedDate());
+            displaySpinner("Loading Progress Notes for " + window.current_selected_name + " on " + getSelectedDateString());
             return Promise.all(listOfPatientIds.map(createAndFetchPDF));
         } else {
             throw new UserError(
@@ -178,7 +216,7 @@ function handleError(error){
     console.error(error);
 }
 
-function formatDate(input) {
+function toDateObject(input) {
   const dateParts = input.split(' ');
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -194,7 +232,7 @@ function formatDate(input) {
   return formattedDate;
 }
 
-function generateISOStringForNextDay(date) {
+function generateDateForNextDay(date) {
   const currentDate = new Date(date);
   currentDate.setDate(currentDate.getDate() + 1);
   return currentDate;
@@ -224,7 +262,7 @@ function promptPrint(pdfBytes){
     };
 }
 
-function getSelectedDate(){
+function getSelectedDateString(){
     try {
         return document.getElementById(DATE_SELECTION_ID).value;
     } catch (e){
@@ -235,9 +273,9 @@ function getSelectedDate(){
 }
 
 function getAndFormatDateParams(){
-    let selectedDate = getSelectedDate();
-    let today = formatDate(selectedDate)
-    let tomorrow = generateISOStringForNextDay(today);
+    let selectedDate = getSelectedDateString();
+    let today = toDateObject(selectedDate)
+    let tomorrow = generateDateForNextDay(today);
     return { start:today.toISOString(), end:tomorrow.toISOString() };
 }
 
