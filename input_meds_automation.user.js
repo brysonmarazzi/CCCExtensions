@@ -46,11 +46,10 @@ document.addEventListener('keydown', function(event) {
 function handlePaste(text){
     parseMedicalData(text)
     .then(medicalData => {
-        // getPatientData(medicalData.PHN)
-        // .then(patientData => {
-        //     return handlePatientMedicalRecords(patientData, medicalData);
-        // })
+        return getPatientData(medicalData.PHN)
+        .then(patientData => { return { patient:patientData, medications: medicalData.medications } })
     })
+    .then(handlePatientMedicalRecords)
     .catch(handleError)
 }
 
@@ -66,25 +65,25 @@ function getPatientData(phn){
     return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + '/patients.json?limit=1&offset=0&term=' + phn.replace(/\s/g, ""), {
         method: 'GET',
     })
-        .then(response => response.json())
-        .then(jsonList => {
-        if (jsonList.length !== 1) {
-            window.alert("There is no patient found in Arya with PHN="+phn);
-            throw new Error("There is no patient found in Arya with PHN="+phn);
+    .then(response => response.json())
+    .then(jsonList => {
+        if (jsonList.length < 1) {
+            throw new UserError("No patient found!", "There is no patient found in Arya with PHN="+phn);
         } else if(jsonList.length > 1) {
-            window.alert("There are multiple patients found in Arya with PHN="+phn);
-            console.log(jsonList);
-            throw new Error("There are multiple patients found in Arya with PHN="+phn);
+            throw new UserError("No patient found!", "There are multiple patients found in Arya with PHN="+phn);
         }
         return jsonList[0];
     })
 }
 
-function handlePatientMedicalRecords(patientData, medicalData){
+// data = { patient: patientData, medications: medicalData.medications }
+function handlePatientMedicalRecords(data){
     console.log("Handle Medical Records");
-    console.log(patientData);
-    console.log(medicalData);
-    let medicationPromises = medicalData.medications.map(async medication => {
+    let patient = data.patient;
+    let medications = data.medications;
+    console.log(patient);
+    console.log(medications);
+    let medicationPromises = medications.map(async medication => {
         const match = await lookForSuggestionMatch(medication);
         medication.match = match;
         return medication;
@@ -98,13 +97,13 @@ function handlePatientMedicalRecords(patientData, medicalData){
     .then(medicationsToInsert => {
         // User pressed Enter key
         console.log("Constructing then inserting into arya");
-        let [currentMeds, nonCurrentMeds] = partition(medicationsToInsert, (med => med.current)).map(medList => constructMedications(patientData, medList))
+        let [currentMeds, nonCurrentMeds] = partition(medicationsToInsert, (med => med.current)).map(medList => constructMedications(patient, medList))
         let currentPromise = insertMedications(currentMeds);
         let nonCurrentPromise = insertMedications(nonCurrentMeds).then(discontinueMedications);
         return Promise.all([currentPromise, nonCurrentPromise])
         .then(insertedRecords => {
             let [currentMeds, nonCurrentMeds] = insertedRecords;
-            let title = "Successfully inserted " + (currentMeds.length + nonCurrentMeds.length) + " medications for " + patientData.label;
+            let title = "Successfully inserted " + (currentMeds.length + nonCurrentMeds.length) + " medications for " + patient.label;
             let message = "Inserted " + currentMeds.length + " current meds, and " + nonCurrentMeds.length + " non-current meds."
             successAlert(title, message);
             return insertedRecords;
@@ -384,6 +383,7 @@ class MedRecParser {
         return medicalData;
     }
 }
+
 function parseMedicalData(dataString) {
     return new Promise((resolve, reject) => {
     try {
@@ -396,98 +396,6 @@ function parseMedicalData(dataString) {
     }
     });
 }
-// function parseMedicalData(dataString) {
-//     function parseMedicationLines(isCurrent, lines){
-//         const medication = {
-//             current: isCurrent,
-//             DIN: undefined,
-//             Name: undefined,
-//             Trade: undefined,
-//             Instruction: undefined
-//         };
-//         medication.DIN = lines[0].trim();
-//         medication.Name = lines[1].trim();
-//         medication.Trade = lines[2].trim();
-//         medication.Instruction = lines[5].trim();
-//         return medication;
-//     }
-
-//     //Given the input string split into lines, return true if represents data copied form Pharmanet data, false otherwise
-//     function isValidMedicalData(lines){
-//         return (lines && lines.length > 0 && lines[0].trim().startsWith("Request issued") && lines.length > 13);
-//     }
-
-//     const CURRENT_MR_LENGTH = 8;
-//     const NON_CURRENT_MR_LENGTH = 6;
-//     function isDINOrContinue(string) {
-//         let trimmed = string.trim();
-//         return /^\d+$/.test(trimmed) || trimmed === 'Continue';
-//     }
-
-//     const medicalData = {
-//         PHN: '',
-//         name: '',
-//         birthDate: '',
-//         gender: '',
-//         medications: []
-//     };
-
-//     const lines = dataString.split('\n');
-
-//     //Validate the input and return early if not valid
-//     if(!isValidMedicalData(lines)){ return null; }
-
-//     let isParsingMedications = false;
-
-//     for (let i = 0; i < lines.length; i++) {
-//         const line = lines[i].trim();
-
-//         if (line === 'Continue') {
-//             if (isParsingMedications) {
-//                 break; // Stop parsing once second "Continue" line is found
-//             } else {
-//                 isParsingMedications = true; // Start parsing medical records
-//                 continue;
-//             }
-//         }
-
-//         if (!isParsingMedications) {
-//             const patientInfoRegex = /(\d{4} \d{3} \d{3}) - (.+) - (\d{4} [a-zA-Z]{3} \d{2}) - (\w+)/;
-//             const patientInfoMatch = patientInfoRegex.exec(line);
-
-//             if (patientInfoMatch) {
-//                 medicalData.PHN = patientInfoMatch[1];
-//                 medicalData.name = patientInfoMatch[2];
-//                 medicalData.birthDate = patientInfoMatch[3];
-//                 medicalData.gender = patientInfoMatch[4];
-//             }
-//         } else {
-
-//             let isCurrent;
-//             let medicationDataLines;
-
-//             if (i + CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + CURRENT_MR_LENGTH])){
-//                 isCurrent = true;
-//                 medicationDataLines = lines.slice(i, i + CURRENT_MR_LENGTH);
-//             } else if (i + NON_CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + NON_CURRENT_MR_LENGTH])){
-//                 isCurrent = false;
-//                 medicationDataLines = lines.slice(i, i + NON_CURRENT_MR_LENGTH);
-//             } else {
-//                 break;
-//             }
-
-//             if (isCurrent) { medicationDataLines.splice(1,2); }
-
-//             let medication = parseMedicationLines(isCurrent, medicationDataLines);
-
-//             i += (isCurrent ? CURRENT_MR_LENGTH : NON_CURRENT_MR_LENGTH) - 1;
-
-//             medicalData.medications.push(medication);
-//         }
-//     }
-
-//     return medicalData;
-// }
 
 function getMedicationList(phn){
     console.log("getMedicationList:");
