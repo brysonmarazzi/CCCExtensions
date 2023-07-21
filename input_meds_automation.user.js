@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Medications Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      3.0
 // @description  Automate insertion of medical data into Arya
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -12,6 +12,7 @@
 const MEDICATION_ID = "medications";
 const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1/';
 const CLINIC_ID_INDEX = 5;
+const PATIENT_ID_INDEX = 7;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
 const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/g
@@ -21,46 +22,56 @@ const COMBO_PRODUCT_REGEX = /\b\w+\/\w+\b/;
 
 document.addEventListener('keydown', function(event) {
     window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
+    window.patient_id = window.location.href.split("/")[PATIENT_ID_INDEX];
     // Check if Command+V (Mac) or Ctrl+V (Windows) is pressed
     if ((event.metaKey || event.ctrlKey) && event.code === 'KeyV') {
         // Access clipboard data
-        navigator.clipboard.readText().then(function(text) {
-            // Use the clipboard data here
-            let medicalData = parseMedicalData(text);
-            if (medicalData){
-                getPatientData(medicalData.PHN)
-                .then(patientData => {
-                    return handlePatientMedicalRecords(patientData, medicalData);
-                })
-                    .catch(error => console.error(error));
-            } else {
-                warningAlert("Invalid paste detected!", "Detected paste does not look like Med Rec Pharmanet text!")
-            }
-        }).catch(function(error) {
-            console.error('Failed to read clipboard data:', error);
-        });
+        navigator.clipboard.readText()
+        .then(handlePaste)
     }
 });
 
-function getPatientData(phn){
-    return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + '/patients.json?limit=1&offset=0&term=' + phn.replace(/\s/g, ""), {
+function handlePaste(text){
+    parseMedicalData(text)
+    .then(medicalData => {
+        return getPatientData(medicalData.PHN)
+        .then(patientData => { return { patient:patientData, medications: medicalData.medications } })
+    })
+    .then(handlePatientMedicalRecords)
+    .catch(handleError)
+}
+
+function getPatientDataFromUUid(uuid){
+    return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + '/patients/' + uuid, {
         method: 'GET',
     })
         .then(response => response.json())
-        .then(jsonList => {
-        if (jsonList.length !== 1) {
-            window.alert("There is no patient found in Arya with PHN="+phn);
-            throw new Error("There is no patient found in Arya with PHN="+phn);
+}
+
+function getPatientData(phn){
+    console.log("Fetching patient with phn=" + phn);
+    return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + '/patients.json?limit=1&offset=0&term=' + phn.replace(/\s/g, ""), {
+        method: 'GET',
+    })
+    .then(response => response.json())
+    .then(jsonList => {
+        if (jsonList.length < 1) {
+            throw new UserError("No patient found!", "There is no patient found in Arya with PHN="+phn);
+        } else if(jsonList.length > 1) {
+            throw new UserError("No patient found!", "There are multiple patients found in Arya with PHN="+phn);
         }
         return jsonList[0];
     })
 }
 
-function handlePatientMedicalRecords(patientData, medicalData){
+// data = { patient: patientData, medications: medicalData.medications }
+function handlePatientMedicalRecords(data){
     console.log("Handle Medical Records");
-    console.log(patientData);
-    console.log(medicalData);
-    let medicationPromises = medicalData.medications.map(async medication => {
+    let patient = data.patient;
+    let medications = data.medications;
+    console.log(patient);
+    console.log(medications);
+    let medicationPromises = medications.map(async medication => {
         const match = await lookForSuggestionMatch(medication);
         medication.match = match;
         return medication;
@@ -71,21 +82,19 @@ function handlePatientMedicalRecords(patientData, medicalData){
         return medications;
     })
     .then(medications => medications.filter(med => med.match))
-    .then(matchedMedications => {
-        console.log("Filtered Medications for HAS MATCH: ");
-        console.log(matchedMedications);
-        return matchedMedications;
-    })
     .then(medicationsToInsert => {
         // User pressed Enter key
         console.log("Constructing then inserting into arya");
-        let aryaMeds = constructMedications(patientData, medicationsToInsert)
-        insertMedications(aryaMeds)
+        let [currentMeds, nonCurrentMeds] = partition(medicationsToInsert, (med => med.current)).map(medList => constructMedications(patient, medList))
+        let currentPromise = insertMedications(currentMeds);
+        let nonCurrentPromise = insertMedications(nonCurrentMeds).then(discontinueMedications);
+        return Promise.all([currentPromise, nonCurrentPromise])
         .then(insertedRecords => {
-            console.log(insertedRecords);
-            let title = "Successfully inserted " + insertedRecords.length + " medications! Refresh the page to see."
-            let message = "Patient: " + patientData.label;
+            let [currentMeds, nonCurrentMeds] = insertedRecords;
+            let title = "Successfully inserted " + (currentMeds.length + nonCurrentMeds.length) + " medications for " + patient.label;
+            let message = "Inserted " + currentMeds.length + " current meds, and " + nonCurrentMeds.length + " non-current meds."
             successAlert(title, message);
+            return insertedRecords;
         })
     });
 }
@@ -106,10 +115,44 @@ function constructMedications(patientData, medications){
     });
 }
 
+function discontinueMedications(medications){
+    console.log("Discontinue medications into Arya");
+    console.log(medications)
+    let discontinuePromises = medications.map(discontinueMedication);
+    return Promise.all(discontinuePromises);
+}
+
+function deleteMedication(aryaBackendMed){
+    console.log("UUID to delete: " + aryaBackendMed.uuid);
+    console.log(JSON.stringify(aryaBackendMed))
+    const payload = { medication: aryaBackendMed };
+    return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + "/medications/" + aryaBackendMed.uuid, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(response => response.text());
+}
+
+function discontinueMedication(aryaBackendMed){
+    aryaBackendMed['active'] = "on"
+    // [ "versions", "message" ].forEach(key => delete aryaBackendMed[key])
+    // Define the request payload
+    console.log("Discontinue: ")
+    console.log(aryaBackendMed)
+    const payload = { medication: aryaBackendMed };
+
+    // Make the POST request
+    return fetch(ARYA_URL_ROOT + 'clinics/' + window.clinic_id + '/medications/' + aryaBackendMed.uuid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(response => response.json());
+}
+
 //Given a list of arya medications, insert all into database
 function insertMedications(aryaMedications){
     console.log("Inserting medications into Arya");
-    let insertPromises = aryaMedications.map(medication => insertMedication(medication));
+    let insertPromises = aryaMedications.map(insertMedication);
     return Promise.all(insertPromises).catch(error => console.error(error));
 }
 
@@ -219,119 +262,154 @@ function lookForSuggestionMatch(medication){
 
 //Given a valid arya style medication, insert into the backend
 //TODO Make sure the data is not already in the database.
-function insertMedication(medication){
-    console.log("Inserting into Arya: " + JSON.stringify(medication));
+function insertMedication(aryaMedication){
+    console.log("Inserting into Arya: " + JSON.stringify(aryaMedication));
 
     // Define the request payload
-    const payload = { medication: medication };
+    const payload = { medication: aryaMedication };
 
     // Make the POST request
     return fetch(ARYA_URL_ROOT + 'clinics/' + window.clinic_id + '/medications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-    })
-        .then(response => response.json());
+    }).then(response => response.json());
 }
 
-function parseMedicalData(dataString) {
-    function parseMedicationLines(isCurrent, lines){
-        const medication = {
-            current: isCurrent,
-            DIN: undefined,
-            Name: undefined,
-            Trade: undefined,
-            Instruction: undefined
-        };
-        medication.DIN = lines[0].trim();
-        medication.Name = lines[1].trim();
-        medication.Trade = lines[2].trim();
-        medication.Instruction = lines[5].trim();
-        return medication;
+class MedRecParser {
+    constructor(text) {
+        this.text = text
     }
+    #CURRENT_MR_LENGTH = 8;
+    #NON_CURRENT_MR_LENGTH = 6;
 
-    //Given the input string split into lines, return true if represents data copied form Pharmanet data, false otherwise
-    function isValidMedicalData(lines){
-        return (lines && lines.length > 0 && lines[0].trim().startsWith("Request issued") && lines.length > 13);
-    }
-
-    const CURRENT_MR_LENGTH = 8;
-    const NON_CURRENT_MR_LENGTH = 6;
-    function isDINOrContinue(string) {
+    #isDINOrContinue(string) {
         let trimmed = string.trim();
         return /^\d+$/.test(trimmed) || trimmed === 'Continue';
     }
 
-    const medicalData = {
-        PHN: '',
-        name: '',
-        birthDate: '',
-        gender: '',
-        medications: []
-    };
+    #parseMedicationLines(isCurrent, lines){
+        return {
+            current: isCurrent,
+            DIN: lines[0].trim(),
+            Name: lines[1].trim(),
+            Trade: lines[2].trim(),
+            Instruction: lines[5].trim(),
+        };
+    }
 
-    const lines = dataString.split('\n');
-
-    //Validate the input and return early if not valid
-    if(!isValidMedicalData(lines)){ return null; }
-
-    let isParsingMedications = false;
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-
-        if (line === 'Continue') {
-            if (isParsingMedications) {
-                break; // Stop parsing once second "Continue" line is found
-            } else {
-                isParsingMedications = true; // Start parsing medical records
-                continue;
-            }
-        }
-
-        if (!isParsingMedications) {
-            const patientInfoRegex = /(\d{4} \d{3} \d{3}) - (.+) - (\d{4} [a-zA-Z]{3} \d{2}) - (\w+)/;
-            const patientInfoMatch = patientInfoRegex.exec(line);
-
-            if (patientInfoMatch) {
-                medicalData.PHN = patientInfoMatch[1];
-                medicalData.name = patientInfoMatch[2];
-                medicalData.birthDate = patientInfoMatch[3];
-                medicalData.gender = patientInfoMatch[4];
-            }
-        } else {
-
-            let isCurrent;
-            let medicationDataLines;
-
-            if (i + CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + CURRENT_MR_LENGTH])){
-                isCurrent = true;
-                medicationDataLines = lines.slice(i, i + CURRENT_MR_LENGTH);
-            } else if (i + NON_CURRENT_MR_LENGTH < lines.length && isDINOrContinue(lines[i + NON_CURRENT_MR_LENGTH])){
-                isCurrent = false;
-                medicationDataLines = lines.slice(i, i + NON_CURRENT_MR_LENGTH);
-            } else {
-                break;
-            }
-
-            if (isCurrent) { medicationDataLines.splice(1,2); }
-
-            let medication = parseMedicationLines(isCurrent, medicationDataLines);
-
-            i += (isCurrent ? CURRENT_MR_LENGTH : NON_CURRENT_MR_LENGTH) - 1;
-
-            medicalData.medications.push(medication);
+    //Given the input string split into lines, return true if represents data copied form Pharmanet data, false otherwise
+    // TODO throw error
+    validate(){
+        let lines = this.text?.split('\n'); 
+        const valid = lines && lines.length > 0 && lines[0].trim().startsWith("Request issued") && lines.length > 13;
+        if(!valid){
+            throw new PasteError("Detected paste does not look like Med Rec Pharmanet text!");
         }
     }
 
-    return medicalData;
+    parse(){
+        const lines = this.text.split('\n');
+        let isParsingMedications = false;
+        let medicalData = {
+            PHN: '',
+            name: '',
+            birthDate: '',
+            gender: '',
+            medications: []
+        };
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+
+            if (line === 'Continue') {
+                if (isParsingMedications) {
+                    break; // Stop parsing once second "Continue" line is found
+                } else {
+                    isParsingMedications = true; // Start parsing medical records
+                    continue;
+                }
+            }
+
+            if (!isParsingMedications) {
+                const patientInfoRegex = /(\d{4} \d{3} \d{3}) - (.+) - (\d{4} [a-zA-Z]{3} \d{2}) - (\w+)/;
+                const patientInfoMatch = patientInfoRegex.exec(line);
+
+                if (patientInfoMatch) {
+                    medicalData.PHN = patientInfoMatch[1];
+                    medicalData.name = patientInfoMatch[2];
+                    medicalData.birthDate = patientInfoMatch[3];
+                    medicalData.gender = patientInfoMatch[4];
+                }
+            } else {
+
+                let isCurrent;
+                let medicationDataLines;
+
+                if (i + this.#CURRENT_MR_LENGTH < lines.length && this.#isDINOrContinue(lines[i + this.#CURRENT_MR_LENGTH])){
+                    isCurrent = true;
+                    medicationDataLines = lines.slice(i, i + this.#CURRENT_MR_LENGTH);
+                } else if (i + this.#NON_CURRENT_MR_LENGTH < lines.length && this.#isDINOrContinue(lines[i + this.#NON_CURRENT_MR_LENGTH])){
+                    isCurrent = false;
+                    medicationDataLines = lines.slice(i, i + this.#NON_CURRENT_MR_LENGTH);
+                } else {
+                    break;
+                }
+
+                if (isCurrent) { medicationDataLines.splice(1,2); }
+
+                let medication = this.#parseMedicationLines(isCurrent, medicationDataLines);
+
+                i += (isCurrent ? this.#CURRENT_MR_LENGTH : this.#NON_CURRENT_MR_LENGTH) - 1;
+
+                medicalData.medications.push(medication);
+            }
+        }
+
+        if(!medicalData.PHN){
+            throw new PasteError("Valid Med Rec Pharmanet text contains invalid PHN number!");
+        }
+        return medicalData;
+    }
 }
 
-function getMedicationList(patient_id){
+function parseMedicalData(dataString) {
+    return new Promise((resolve, reject) => {
+    try {
+        let parser = new MedRecParser(dataString);
+        parser.validate();
+        let result = parser.parse();
+        resolve(result);
+    } catch (error) {
+        reject(error); // If an error occurs, reject the Promise with the error
+    }
+    });
+}
+
+function getMedicationList(phn){
     console.log("getMedicationList:");
-    return getPatientData(patient_id)
+    return getPatientData(phn)
     .then(data => data.medications)
 }
+
+function getCompletedMedicationList(uuid){
+    console.log("getCompletedMedicationList:");
+    return getPatientDataFromUUid(uuid)
+    .then(data => data.completed_medications)
+}
+
+/**********************************************************************
+========================COMMON FUNCTIONS===============================
+**********************************************************************/
+function handleError(error){
+    console.log("handle error")
+    if (error instanceof UserError || error instanceof AryaChangedError || error instanceof PasteError){
+        warningAlert(error.title, error.message);
+    } else {
+        warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
+    }
+    console.error(error);
+}
+
 
 function warningAlert(title, message){
     showNonBlockingAlert(title, message, WARNING_COLOR);
@@ -365,13 +443,44 @@ function showNonBlockingAlert(titletext, messagetext, color) {
     
     document.body.appendChild(alertDiv);
     
-    let seconds = (messagetext.split(" ").length / 3) * 1000
-    console.log(seconds)
+    let seconds = messagetext ? (messagetext.split(" ").length / 3) * 1000 : 3000
+    seconds += titletext ? (titletext.split(" ").length / 3) * 1000 : 3000
     
     setTimeout(function() {
         alertDiv.style.opacity = '0';
         setTimeout(function() {
             document.body.removeChild(alertDiv);
         }, 500);
-    }, seconds); // Show the alert for 2 seconds
+    }, seconds);
 }
+
+class UserError extends Error {
+    constructor(title, message){
+        super(message);
+        this.name = "UserError"
+        this.title = title;
+    }
+}
+
+class PasteError extends Error {
+    constructor(message){
+        super(message);
+        this.name = "PasteError"
+        this.title = "Invalid paste detected!";
+    }
+}
+
+class AryaChangedError extends Error {
+    constructor(message){
+        super(message);
+        this.name = "AryaChangedError"
+        this.title = "An Arya update has broken this script! Contact Bryson 604-300-6875";
+    }
+}
+
+// Helper method for stack overflow
+const partition = (ary, callback) =>
+  ary.reduce((acc, e) => {
+    acc[callback(e) ? 0 : 1].push(e)
+    return acc
+  }, [[], []])
