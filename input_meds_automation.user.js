@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Medications Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      2.0
 // @description  Automate insertion of medical data into Arya
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -70,9 +70,9 @@ function handlePatientMedicalRecords(patientData, medicalData){
         console.log(medications);
         return medications;
     })
-    .then(medications => medications.filter(med => med.match && med.current))
+    .then(medications => medications.filter(med => med.match))
     .then(matchedMedications => {
-        console.log("Filtered Medications for HAS MATCH && IS CURRENT: ");
+        console.log("Filtered Medications for HAS MATCH: ");
         console.log(matchedMedications);
         return matchedMedications;
     })
