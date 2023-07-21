@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      5.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -45,7 +45,9 @@ function addPrintButtonToScreen(schedule){
     }
 }
 
-function createAndFetchPDF(uuid){
+function createAndFetchPDF(patientObj){
+    let uuid = patientObj.uuid;
+    let reason = patientObj.reason;
     console.log("Creating and Fetching for uuid: " + uuid);
     let payload = {"form":{"patient_id":uuid,"form_creator_id":PROGRESS_NOTE_FORM_ID}}
     return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + "/forms", {
@@ -54,14 +56,14 @@ function createAndFetchPDF(uuid){
         body: JSON.stringify(payload)
     })
     .then(response => response.json())
-    .then(createdResponse => { return updatePDFDoctorAndDate(createdResponse, uuid) })
+    .then(createdResponse => { return updatePDF(createdResponse, uuid, reason) })
     .then(json => json.uuid)
     .then(fetchFile)
 }
 
-function updatePDFDoctorAndDate(createdFormResponse, patientUuid){
+function updatePDF(createdFormResponse, patientUuid, reason){
     console.log("Updating for uuid: " + createdFormResponse?.uuid);
-    let payload = { "form":createdPDFResponseToUpdateForm(createdFormResponse, patientUuid) }
+    let payload = { "form":createdPDFResponseToUpdateForm(createdFormResponse, patientUuid, reason) }
     return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + "/forms/" + createdFormResponse.uuid, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -70,7 +72,7 @@ function updatePDFDoctorAndDate(createdFormResponse, patientUuid){
     .then(response => response.json())
 }
 
-function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid){
+function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid, reason){
     return {
         uuid: createdFormResponse.uuid,
         patient_id: patientUuid,
@@ -83,6 +85,10 @@ function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid){
            {
             uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "ReferringPhysician")?.uuid,
             value: "Dr. " + window.current_selected_name,
+           },
+           {
+            uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "BlankTextArea")?.uuid,
+            value: reason,
            }
         ]
     }
@@ -183,10 +189,10 @@ function handleButtonClick(){
     })
     .then(getPatientsForTheDay)
     // .then(verifyCleanedUp)
-    .then(listOfPatientIds => { 
-        if(listOfPatientIds && listOfPatientIds.length > 0){
+    .then(listOfPatients => { 
+        if(listOfPatients && listOfPatients.length > 0){
             displaySpinner("Loading Progress Notes for " + window.current_selected_name + " on " + getSelectedDateString());
-            return Promise.all(listOfPatientIds.map(createAndFetchPDF));
+            return Promise.all(listOfPatients.map(createAndFetchPDF));
         } else {
             throw new UserError(
                 "Looks like " + window.current_selected_name + " doesn't have any patients to print!",
@@ -287,7 +293,7 @@ function getPatientsForTheDay(userId){
     return fetch(url + queryParams, { method: 'GET' })
         .then(response => response.json())
         .then(scheduleItems => scheduleItems.filter(item => item.patient.last_name !== FAKE_PATIENT))
-        .then(scheduleItems => scheduleItems.map(item => item.patient_id))
+        .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient_id, reason: (item.description ? item.description : '') } }))
 }
 
 function getCurrentAdminUser(){
