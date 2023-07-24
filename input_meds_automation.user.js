@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Medications Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      4.0
 // @description  Automate insertion of medical data into Arya
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -15,8 +15,7 @@ const CLINIC_ID_INDEX = 5;
 const PATIENT_ID_INDEX = 7;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
-const MEDICATION_DOSAGE_REGEX = /\d+(\.\d+)?\s*(MCG|MG)|\d+\s*(MCG|MG)/g
-const COMBO_PRODUCT_REGEX = /\b\w+\/\w+\b/;
+const DRUG_SEARCH_URL = "https://health-products.canada.ca/api/drug/"
 
 'use strict';
 
@@ -28,7 +27,14 @@ document.addEventListener('keydown', function(event) {
         // Access clipboard data
         navigator.clipboard.readText()
         .then(handlePaste)
-    }
+    } else if ((event.metaKey || event.ctrlKey) && event.code === 'KeyK') {
+        // UN-COMMENT BELOW TO EASILY DELETE ALL MEDS IN A PATIENT PROFILE with ctrl + shift + K
+        // getAllMedications(window.patient_id)
+        // .then(medications => { 
+        //     return Promise.all(medications.map(deleteMedication))
+        // })
+        // .then(_ => successAlert("Successfully deleted all discontinued records"))
+    } 
 });
 
 function handlePaste(text){
@@ -41,11 +47,163 @@ function handlePaste(text){
     .catch(handleError)
 }
 
+// Given a patient uuid, and a medication parsed from pharmanet data
+// Construct, and insert it.
+// TODO Make sure the data is not already in the database.
+function handleMedication(uuid, pharmanet_medication){
+    return fetchDrugData(pharmanet_medication.DIN)
+    .then(drugData => {
+        let isComboProduct = drugData.number_of_ais > 1;
+        if(isComboProduct){
+            console.log("IS COMBO PRODUCT")
+            console.log(drugData)
+        }
+        let dosage = undefined;
+        if (isComboProduct){
+            const initialUnit = drugData.active_ingredient_list[0].strength_unit;
+            let isSameUnit = drugData.active_ingredient_list.reduce((result, ai) => result && ai.strength_unit === initialUnit, true);
+            if (isSameUnit) {
+                dosage = drugData.active_ingredient_list.map(ai => ai.strength).join("-") + initialUnit;
+            } else {
+                dosage = drugData.active_ingredient_list.map(ai => ai.strength + ai.strength_unit).join("-");
+            }
+        } else {
+            dosage = drugData.strength + drugData.strength_unit;
+        }
+
+        return {
+            "patient_id": "ecdfec0e-597d-4ac3-9ffd-4454b5291815",//TODO uuid,
+            "dose": dosage,
+            "route": drugData.route_of_administration_name,
+            "comment": pharmanet_medication.Instruction,
+            "name": isComboProduct ? drugData.brand_name : drugData.ingredient_name,
+            "frequency": extractFrequencyFromInstruction(pharmanet_medication.Instruction),
+        }
+    })
+    .then(insertMedication)
+    .then(aryaInsertResponse => {
+        if(!pharmanet_medication.current) {
+            return discontinueMedication(aryaInsertResponse);
+        }
+        return aryaInsertResponse;
+    })
+}
+
+
+// data = { patient: patientData, medications: medicalData.medications }
+function handlePatientMedicalRecords(data){
+    console.log("Handle Medical Records");
+    let patient = data.patient;
+    let medications = data.medications;
+    console.log(patient.uuid);
+    console.log(medications);
+    let insertPromises = medications.map(medication => handleMedication(patient.uuid, medication))
+    return Promise.allSettled(insertPromises)
+    .then(results => {
+        let successful = results.filter(result => result.status === "fulfilled");
+        let rejected = results.filter(result => result.status === "rejected").map(rejected => {
+            console.error(rejected.reason);
+            return rejected.reason;
+        })
+        let title = "Medications successfully inserted " + successful.length + " and rejected " + rejected.length;
+        let message = "Patient: " + patient.label;
+        successAlert(title, message);
+    })
+}
+
+function extractFrequencyFromInstruction(instruction){
+    if(instruction.includes("TAKE")){
+        let partAfterTake = instruction.split("TAKE")[1];
+        if(partAfterTake.includes("TABLET") || partAfterTake.includes("CAPSULE")){
+            const pattern = /\b(?:TABLET|TABLETS|CAPSULE|CAPSULES)\b/gi;
+            let partAfterItem = partAfterTake.split(pattern)[1];
+            if(partAfterItem.includes("A DAY") || partAfterItem.includes("DAILY")){
+                let partBefore = undefined;
+                if(partAfterItem.split("DAILY").length > 0){
+                    partBefore = partAfterItem.split("DAILY")[0];
+                } else {
+                    partBefore = partAfterItem.split("A DAY")[0];
+                }
+                if(partBefore.includes("ONCE")){ return "Daily"; }
+                if(partBefore.includes("TWICE")){ return "BID"; }
+                if(partBefore.includes("THREE")){ return "TID"; }
+                if(partBefore.includes("FOUR")){ return "QID"; }
+                if(partBefore.includes("1")){ return "Daily"; }
+                if(partBefore.includes("2")){ return "BID"; }
+                if(partBefore.includes("3")){ return "TID"; }
+                if(partBefore.includes("4")){ return  "QID"; }
+                if(partBefore.includes("AS NEEDED")){ return "PRN"; }
+            }
+            return "Daily"
+        }
+    }
+    return null;
+}
+
+/**********************************************************************
+=========================Drug Canada Functions=========================
+**********************************************************************/
+async function fetchDrugData(din){
+    let drugInfo = await fetchDrugInfomation(din);
+    let route = await fetchRoute(drugInfo.drug_code);
+    let ai = await fetchActiveIngredients(drugInfo.drug_code);
+    return { ...drugInfo, ...route, ...ai }
+}
+
+function fetchRoute(id){
+    return fetch(DRUG_SEARCH_URL + "route/?id=" + id, { method: 'GET', })
+    .then(response => response.json())
+    .then(jsonData => {
+        if (jsonData && Array.isArray(jsonData) && jsonData.length == 1){
+            return jsonData[0]
+        }
+        throw new UserError(
+            "Failed to get Drug Route Data",
+            "id="+id+", jsonData=" + JSON.stringify(jsonData)
+        )
+    })
+}
+
+function fetchActiveIngredients(id){
+    return fetch(DRUG_SEARCH_URL + "activeingredient/?id=" + id, { method: 'GET', })
+    .then(response => response.json())
+    .then(jsonData => {
+        if (jsonData && Array.isArray(jsonData) && jsonData.length > 0){
+            if(jsonData.length == 1){
+                return jsonData[0];
+            } else {
+                return { active_ingredient_list: jsonData };
+            }
+        }
+        throw new UserError(
+            "Failed to get Drug Active Ingredient Data",
+            "id="+id+", jsonData=" + JSON.stringify(jsonData)
+        )
+    })
+}
+
+function fetchDrugInfomation(din){
+    return fetch(DRUG_SEARCH_URL + "drugproduct/?din=" + din, { method: 'GET' })
+    .then(response => response.json())
+    .then(jsonData => {
+        if (jsonData && Array.isArray(jsonData) && jsonData.length == 1){
+            return jsonData[0]
+        }
+        throw new UserError(
+            "Failed to get Drug Information Data",
+            "din="+din+", jsonData=" + JSON.stringify(jsonData)
+        )
+    })
+}
+
+/**********************************************************************
+========================Arya Backend Functions=========================
+**********************************************************************/
 function getPatientDataFromUUid(uuid){
     return fetch(ARYA_URL_ROOT + "clinics/" + window.clinic_id + '/patients/' + uuid, {
         method: 'GET',
     })
-        .then(response => response.json())
+    .then(response => response.json())
 }
 
 function getPatientData(phn){
@@ -64,64 +222,6 @@ function getPatientData(phn){
     })
 }
 
-// data = { patient: patientData, medications: medicalData.medications }
-function handlePatientMedicalRecords(data){
-    console.log("Handle Medical Records");
-    let patient = data.patient;
-    let medications = data.medications;
-    console.log(patient);
-    console.log(medications);
-    let medicationPromises = medications.map(async medication => {
-        const match = await lookForSuggestionMatch(medication);
-        medication.match = match;
-        return medication;
-    })
-    Promise.all(medicationPromises).then(medications => {
-        console.log("Promised all the medications: ");
-        console.log(medications);
-        return medications;
-    })
-    .then(medications => medications.filter(med => med.match))
-    .then(medicationsToInsert => {
-        // User pressed Enter key
-        console.log("Constructing then inserting into arya");
-        let [currentMeds, nonCurrentMeds] = partition(medicationsToInsert, (med => med.current)).map(medList => constructMedications(patient, medList))
-        let currentPromise = insertMedications(currentMeds);
-        let nonCurrentPromise = insertMedications(nonCurrentMeds).then(discontinueMedications);
-        return Promise.all([currentPromise, nonCurrentPromise])
-        .then(insertedRecords => {
-            let [currentMeds, nonCurrentMeds] = insertedRecords;
-            let title = "Successfully inserted " + (currentMeds.length + nonCurrentMeds.length) + " medications for " + patient.label;
-            let message = "Inserted " + currentMeds.length + " current meds, and " + nonCurrentMeds.length + " non-current meds."
-            successAlert(title, message);
-            return insertedRecords;
-        })
-    });
-}
-
-//Given medications that have already been filtered create the arya medication with patient data
-//TODO once not filtering out the non matches, implement contructing without the match.
-function constructMedications(patientData, medications){
-    return medications.map(medication => {
-        let match = medication.match;
-        return {
-            "patient_id": patientData.uuid,
-            "dose": match.strength_with_unit,
-            "route": match.route.route_of_administration_name,
-            "comment": medication.Instruction,
-            "name": match.ingredient_name,
-            "frequency": extractFrequencyFromInstruction(medication.Instruction)
-        }
-    });
-}
-
-function discontinueMedications(medications){
-    console.log("Discontinue medications into Arya");
-    console.log(medications)
-    let discontinuePromises = medications.map(discontinueMedication);
-    return Promise.all(discontinuePromises);
-}
-
 function deleteMedication(aryaBackendMed){
     console.log("UUID to delete: " + aryaBackendMed.uuid);
     console.log(JSON.stringify(aryaBackendMed))
@@ -135,7 +235,7 @@ function deleteMedication(aryaBackendMed){
 
 function discontinueMedication(aryaBackendMed){
     aryaBackendMed['active'] = "on"
-    // [ "versions", "message" ].forEach(key => delete aryaBackendMed[key])
+
     // Define the request payload
     console.log("Discontinue: ")
     console.log(aryaBackendMed)
@@ -149,119 +249,7 @@ function discontinueMedication(aryaBackendMed){
     }).then(response => response.json());
 }
 
-//Given a list of arya medications, insert all into database
-function insertMedications(aryaMedications){
-    console.log("Inserting medications into Arya");
-    let insertPromises = aryaMedications.map(insertMedication);
-    return Promise.all(insertPromises).catch(error => console.error(error));
-}
-
-//Extract the MG dosage from the name and remove the space. Null if doesn't exist.
-function extractDosagesFromName(name){
-    const matches = name.match(MEDICATION_DOSAGE_REGEX);
-    if (matches && matches.length > 0) {
-        return matches.reverse()
-        .map(match => match.replace(/\s/g, ""))
-        .map(dose => {
-            return [dose, convertDosageUnit(dose)]
-        })
-        .flat()
-    }
-    return null;
-}
-
-function convertDosageUnit(dose){
-    if(dose.includes("MG")){
-        let num = Number(dose.replace(/MG/g, ""));
-        if(num == NaN) return null;
-        return (num * 1000).toString() + "MCG";
-    }
-    if(dose.includes("MCG")){
-        let num = Number(dose.replace(/MCG/g, ""));
-        if(num == NaN) return null;
-        return (num / 1000).toString() + "MG";
-    } 
-    console.log("Dosage does not contain MG or MCG: " + dose);
-    return null;
-}
-
-function extractFrequencyFromInstruction(instruction){
-    if(instruction.includes("TAKE")){
-        let partAfterTake = instruction.split("TAKE")[1];
-        if(partAfterTake.includes("TABLET") || partAfterTake.includes("CAPSULE")){
-            const pattern = /\b(?:TABLET|TABLETS|CAPSULE|CAPSULES)\b/gi;
-            let amount = partAfterTake.split(pattern)[0].trim();
-            let partAfterItem = partAfterTake.split(pattern)[1];
-            if(partAfterItem.includes("A DAY") || partAfterItem.includes("DAILY")){
-                let partBefore = undefined;
-                if(partAfterItem.split("DAILY").length > 0){
-                    partBefore = partAfterItem.split("DAILY")[0];
-                } else {
-                    partBefore = partAfterItem.split("A DAY")[0];
-                }
-                if(partBefore.includes("ONCE")){ return amount + " - Daily"; }
-                if(partBefore.includes("TWICE")){ return amount + " - BID"; }
-                if(partBefore.includes("THREE")){ return amount + " - TID"; }
-                if(partBefore.includes("FOUR")){ return amount + " - QID"; }
-                if(partBefore.includes("1")){ return amount + " - Daily"; }
-                if(partBefore.includes("2")){ return amount + " - BID"; }
-                if(partBefore.includes("3")){ return amount + " - TID"; }
-                if(partBefore.includes("4")){ return amount + " - QID"; }
-                if(partBefore.includes("AS NEEDED")){ return amount + " - PRN"; }
-            }
-            return amount + " - Daily"
-        }
-    }
-    return "Variable dose";
-}
-
-function isComboProduct(medication){
-    return COMBO_PRODUCT_REGEX.test(medication.Name) && medication.Name.match(MEDICATION_DOSAGE_REGEX)?.length == 2;
-}
-
-function extractSearchWord(medication){
-    var line = isComboProduct(medication) ? medication.Trade : medication.Name;
-    return line.split(" ")[0];
-}
-
-// Given a medication, check for suggestion matches
-// Based on drug name and dosage
-// Example: 
-/*
-    const medication = {
-        current: false,
-        DIN: '898980809',
-        Name: 'DIGOXIN    0.125 MG TABLET',
-        Trade: 'Aa-Levocarb Cr   AA PHARMA INC.',
-        Instruction: '*DAILY DISPENSE* TAKE 3 TABLETS ORALLY ONCE DAILY',
-    };
-*/
-function lookForSuggestionMatch(medication){
-
-    // Get the first word from the Name
-    let searchTerm = extractSearchWord(medication);
-
-    //Extract the dosage from the name if exists. Format as 50MG or 20MG or null.
-    let dosages = extractDosagesFromName(medication.Name);
-
-    if (!dosages){ console.log("DOSAGE NOT FOUND IN DRUG NAME: " + medication.Name) }
-
-    return fetch(ARYA_URL_ROOT + 'drugs?limit=50&offset=0&search=' + searchTerm, { method: 'GET', })
-        .then(response => response.json())
-        .then(suggestions => { 
-            if(!suggestions || !dosages) return null;
-            for (let i = 0; i < dosages.length; i++) {
-                let dosage = dosages[i];
-                let foundSuggestion = suggestions.find(suggestion => suggestion.strength_with_unit === dosage);
-                if(foundSuggestion !== undefined) return foundSuggestion;
-            }
-            return null;
-        })
-        .catch(error => console.error(error));
-}
-
 //Given a valid arya style medication, insert into the backend
-//TODO Make sure the data is not already in the database.
 function insertMedication(aryaMedication){
     console.log("Inserting into Arya: " + JSON.stringify(aryaMedication));
 
@@ -390,11 +378,13 @@ function getMedicationList(phn){
     return getPatientData(phn)
     .then(data => data.medications)
 }
-
 function getCompletedMedicationList(uuid){
-    console.log("getCompletedMedicationList:");
     return getPatientDataFromUUid(uuid)
     .then(data => data.completed_medications)
+}
+function getAllMedications(uuid){
+    return getPatientDataFromUUid(uuid)
+    .then(data => data.medications.concat(data.completed_medications))
 }
 
 /**********************************************************************
@@ -407,7 +397,8 @@ function handleError(error){
     } else {
         warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
     }
-    console.error(error);
+    console.error(error)
+    console.error("Title: " + error?.title + " Message: " + error.message);
 }
 
 
@@ -477,10 +468,3 @@ class AryaChangedError extends Error {
         this.title = "An Arya update has broken this script! Contact Bryson 604-300-6875";
     }
 }
-
-// Helper method for stack overflow
-const partition = (ary, callback) =>
-  ary.reduce((acc, e) => {
-    acc[callback(e) ? 0 : 1].push(e)
-    return acc
-  }, [[], []])
