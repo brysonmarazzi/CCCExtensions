@@ -72,7 +72,7 @@ function handleMedication(uuid, pharmanet_medication){
         }
 
         return {
-            "patient_id": "ecdfec0e-597d-4ac3-9ffd-4454b5291815",//TODO uuid,
+            "patient_id": uuid,
             "dose": dosage,
             "route": drugData.route_of_administration_name,
             "comment": pharmanet_medication.Instruction,
