@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      6.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
