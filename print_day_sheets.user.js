@@ -83,15 +83,36 @@ function createdPDFResponseToUpdateForm(createdFormResponse, patientUuid, reason
             value: getCurrentFormDate(),
            },
            {
-            uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "ReferringPhysician")?.uuid,
+            uuid: getDoctorLineUuid(createdFormResponse.patient_form_documents[0]?.form_lines),
             value: "Dr. " + window.current_selected_name,
            },
            {
-            uuid: createdFormResponse.patient_form_documents[0]?.form_lines.find(form_line => form_line.form_creator_line.label === "BlankTextArea")?.uuid,
+            uuid: getReasonLineUuid(createdFormResponse.patient_form_documents[0]?.form_lines),
             value: reason,
            }
         ]
     }
+}
+
+
+function getReasonLineUuid(form_lines){
+    let line = form_lines?.find(form_line => {
+	return form_line.form_creator_line.label === "BlankTextArea" && form_line.value === "Reason:"
+    })?.uuid;
+
+    if(!line){ throw new AryaChangedError("Can't find Reason: " + e.message); }
+
+    return line;
+}
+
+function getDoctorLineUuid(form_lines){
+    let line = form_lines?.find(form_line => {
+	return (form_line.form_creator_line.label === "ReferringPhysician") || (form_line.form_creator_line.label === "BlankTextArea" && form_line.value === "")
+    })?.uuid;
+
+    if(!line){ throw new AryaChangedError("Can't find doctor: " + e.message); }
+
+    return line;
 }
 
 function getCurrentFormDate() {
