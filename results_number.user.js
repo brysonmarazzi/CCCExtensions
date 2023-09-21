@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Arya Results Number
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Logs the number of Results for a Doctor
 // @author       Bryson Marazzi
-// @match        https://app.aryaehr.com/aryaehr/clinics/*/results
+// @match        https://app.aryaehr.com/aryaehr/clinics/*
 // @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // ==/UserScript==
 
