@@ -313,7 +313,7 @@ function getPatientsForTheDay(userId){
     let queryParams = "?limit=100&offset=0&user_uuid=" + userId + "&start_time=" + dateParams.start + "&end_time=" + dateParams.end + "&setUnavailableEvent=false";
     return fetch(url + queryParams, { method: 'GET' })
         .then(response => response.json())
-        .then(scheduleItems => scheduleItems.filter(item => item.patient.last_name !== FAKE_PATIENT))
+        .then(scheduleItems => scheduleItems.filter(item => item.patient_last_name !== FAKE_PATIENT)) // quick fix - investigate further - Oct 6, 2023
         .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient_id, reason: (item.description ? item.description : '') } }))
 }
 
