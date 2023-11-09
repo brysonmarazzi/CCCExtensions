@@ -5,6 +5,7 @@
 // @description  Save the info that should be used on the wwcb form for a patient.
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
+// @match        https://app.dr-bill.ca/*
 // @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // @grant        none
 // @require      https://unpkg.com/pdf-lib
@@ -14,6 +15,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1/';
 const CLINIC_ID_INDEX = 5;
 const PATIENT_ID_INDEX = 7;
 const IS_PATIENTS_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/patients\/[a-zA-Z0-9-]+\/profile$/;
+const IS_NEW_REPORT_DBBILL_PAGE = /^https:\/\/app\.dr-bill\.ca\/patients\/\d+\/billing_records\/new\?type=pr$/;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
 const PROGRESS_NOTE_FORM_ID = "b36b4514-c069-44d1-9945-0500e2247f0c";
@@ -21,13 +23,96 @@ const BUTTON_TEXT =  "Copy WWCB Info";
 const COPY_WWCB_INFO_BUTTON_ID = 'copy-wwcb-info-button';
 const PROFILE_LIST_ELEMENT_CLASSNAME = 'patient-profile-header';
 const WWCB_FORM_NAME = 'WWCB FORM FOR DRBILL AUTOMATION';
-const FORM_LINE_BUFFER_INFO_TO_PLACEHOLDER_MAP = {
-    workSafeClaimNumber: "REPLACE WITH CLAIM NUMBER",
-    companyName: "REPLACE WITH COMPANY NAME",
+const TEXT_DETECTION_ID = 'ccc_10241997';
+
+const ELEMENT_ID_TO_PLACEHOLDER_MAP = {
+    billing_record_wsbc_claim_num: "WorkSafeBC Claim Number",
+    billing_record_physician_report_attributes_employer_name: "Company Name",
+    billing_record_physician_report_attributes_employer_phone_area_code: "Area Code",
+    billing_record_physician_report_attributes_employer_phone_number: "Company Phone Number",
+    billing_record_physician_report_attributes_work_location: "Operating Location Address",
+    billing_record_physician_report_attributes_employer_city: "Operating Location City",
+    billing_record_physician_report_attributes_worker_phone_area_code: "Worker Area Code",
+    billing_record_physician_report_attributes_worker_address: "Address",
+    billing_record_physician_report_attributes_worker_city: "City",
+    billing_record_physician_report_attributes_worker_postal_code: "Postal Code",
+}
+
+const ELEMENT_ID_TO_CONSTANTS_MAP = {
+    billing_record_service_location: "L",
+    billing_record_physician_report_attributes_first_report_false: true,
 }
 
 'use strict';
 let overlay = null;
+
+/*
+* This is the code for the DrBill side.
+*/
+document.addEventListener('keydown', function(event) {
+    // Check if Command+V (Mac) or Ctrl+V (Windows) is pressed
+    if ((event.metaKey || event.ctrlKey) && event.code === 'KeyV' && onNewReportPage()) {
+        // Access clipboard data
+        navigator.clipboard.readText()
+        .then(handlePasteIntoDrBill)
+        .catch(handleError)
+    } 
+});
+
+function handlePasteIntoDrBill(data) {
+    console.log("HANDLE")
+    let validData = validatePaste(data)
+    applyData(validData)
+}
+
+function applyData(data){
+    applyMap(data);
+    applyMap(ELEMENT_ID_TO_CONSTANTS_MAP);
+}
+
+function applyMap(map) {
+    for (const [selector, value] of Object.entries(map)) {
+        let element = document.getElementById(selector);
+        if(!element){
+            throw new AryaChangedError("Cannot find element on Dr Bill with selector: " + selector)
+        }
+        if(element.tagName === "INPUT"){
+            if(element.type === "text") {
+                element.value = value;
+                continue;
+            }
+            if(element.type === "radio") {
+                element.checked = value;
+                continue;
+            }
+        }
+        if(element.tagName === "SELECT"){
+            element.value = value;
+            continue;
+        }
+        console.error("Do not know how to deal with element:");
+        console.error(element);
+    }
+}
+
+function validatePaste(data){
+    let pasteError = new PasteError("Detected paste does not look like valid data!");
+    try {
+        JSON.parse(data);
+    } catch (e) {
+        throw pasteError;
+    }
+    let dataObj = JSON.parse(data);
+    if(!dataObj[TEXT_DETECTION_ID]) {
+        throw pasteError;
+    }
+    return dataObj[TEXT_DETECTION_ID]
+}
+
+function onNewReportPage(){
+    return IS_NEW_REPORT_DBBILL_PAGE.test(document.location.href);
+}
+
 window.onload = observeUrlChange(IS_PATIENTS_PAGE_REGEX, onPatientsPage);
 
 function onPatientsPage(){
@@ -143,8 +228,8 @@ Form Looks like:
 */
 function scrapeInfoFromForm(form) {
     let formLines = form.patient_form_documents[0].form_lines;
-    let data = JSON.parse(JSON.stringify(FORM_LINE_BUFFER_INFO_TO_PLACEHOLDER_MAP));
-    for (const [key, placeHolder] of Object.entries(FORM_LINE_BUFFER_INFO_TO_PLACEHOLDER_MAP)) {
+    let data = JSON.parse(JSON.stringify(ELEMENT_ID_TO_PLACEHOLDER_MAP));
+    for (const [key, placeHolder] of Object.entries(ELEMENT_ID_TO_PLACEHOLDER_MAP)) {
         let foundFormLine = formLines.find(formLine => formLine.form_creator_line.value == placeHolder);
         if(!foundFormLine) {
             throw new AryaChangedError("Can't find the formline with placeholder: " + placeHolder);
@@ -173,12 +258,19 @@ function handleButtonClick(){
     getCurrentPatientWWCBFormUUID()
     .then(getFormByUUID)
     .then(scrapeInfoFromForm)
+    .then(wrapDataInIdentifier)
     .then(copyDataToClipboard)
     .catch(handleError);
 }
 
+function wrapDataInIdentifier(data) {
+    let returnData = {}
+    returnData[TEXT_DETECTION_ID] = data;
+    return returnData;
+}
+
 function handleError(error){
-    if (error instanceof UserError || error instanceof AryaChangedError){
+    if (error instanceof UserError || error instanceof AryaChangedError || error instanceof PasteError){
         warningAlert(error.title, error.message);
     } else {
         warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
@@ -296,5 +388,13 @@ class AryaChangedError extends Error {
         super(message);
         this.name = "AryaChangedError"
         this.title = "An Arya update has broken this script! Contact Bryson 604-300-6875";
+    }
+}
+
+class PasteError extends Error {
+    constructor(message){
+        super(message);
+        this.name = "PasteError"
+        this.title = "Paste with invalid text is detected! Please check what is in your clipboard.";
     }
 }
