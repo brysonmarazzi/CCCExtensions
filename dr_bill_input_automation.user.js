@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dr Bill Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Save repetitive information in a form in Arya and enable pasting data directly into a form in Dr Bill.
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
@@ -17,7 +17,7 @@ const IS_PATIENTS_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/
 const IS_NEW_REPORT_DBBILL_PAGE = /^https:\/\/app\.dr-bill\.ca\/patients\/\d+\/billing_records\/new\?type=pr$/;
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
-const BUTTON_TEXT =  "Copy WSBC Info";
+const BUTTON_TEXT = "Copy WSBC Info";
 const COPY_WSBC_INFO_BUTTON_ID = 'copy-wsbc-info-button';
 const PROFILE_LIST_ELEMENT_CLASSNAME = 'patient-profile-header';
 const WWCB_FORM_NAME = 'New Physicians Report - DR BILL AUTOMATION';
@@ -161,9 +161,9 @@ function applyICD9(codeString){
             .then(response => response.json())
             .then(items => {
                 if(items.length > 0 && items[0].code !== code) {
-                    throw new UserError("Incorrect ICDN Code: " + code, "Please go back to the Arya Template and fix the \"" + ELEMENT_ID_TO_PLACEHOLDER_MAP[ICDN_SELECTOR]  + "\" Input box.");
+                    return items[0];
                 } 
-                return items[0];
+                throw new UserError("Incorrect ICDN Code: " + code, "Please go back to the Arya Template and fix the \"" + ELEMENT_ID_TO_PLACEHOLDER_MAP[ICDN_SELECTOR] + "\" Input box.");
             })
             .then(codeItem => {
                 // console.log(codeItem)
