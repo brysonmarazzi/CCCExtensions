@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dr Bill Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      2.0
 // @description  Save repetitive information in a form in Arya and enable pasting data directly into a form in Dr Bill.
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
@@ -160,9 +160,10 @@ function applyICD9(codeString){
         return fetch(url, { method: 'GET' })
             .then(response => response.json())
             .then(items => {
-                if(items.length > 0 && items[0].code !== code) {
-                    return items[0];
-                } 
+                let matchingItem = items.find(item => item.code === code);
+                if(matchingItem) {
+                    return matchingItem;
+                }
                 throw new UserError("Incorrect ICDN Code: " + code, "Please go back to the Arya Template and fix the \"" + ELEMENT_ID_TO_PLACEHOLDER_MAP[ICDN_SELECTOR] + "\" Input box.");
             })
             .then(codeItem => {
@@ -201,7 +202,7 @@ function resetInputElement(inputElement) {
 // codeItem: { "id": 1134, "code": "0847", "type": "other", "title": "Induced Malaria", "group": "Malaria", "sub_group": "Induced Malaria" }
 function ICDNCodeToDivDisplay(codeItem) {
     let div = document.createElement("DIV");
-    div.setAttribute('data-vlue', codeItem.id);
+    div.setAttribute('data-value', codeItem.id);
     div.classList.add("diagnosis_selectize_item");
     div.setAttribute('data-group', codeItem.group);
     div.setAttribute('data-sub-group', codeItem.title);
@@ -214,7 +215,7 @@ function ICDNCodeToDivDisplay(codeItem) {
 
 function applyData(data){
     for (const [selector, value] of Object.entries(data)) {
-        if(ELEMENT_ID_TO_PLACEHOLDER_MAP[selector] !== value) {
+        if(ELEMENT_ID_TO_PLACEHOLDER_MAP[selector] !== value && value.trim() !== "") {
             switch(selector) {
             case ICDN_SELECTOR:
                 applyICD9(value)
