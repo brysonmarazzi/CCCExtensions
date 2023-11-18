@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dr Bill Input Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      3.0
 // @description  Save repetitive information in a form in Arya and enable pasting data directly into a form in Dr Bill.
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/patients/*/profile
@@ -599,6 +599,10 @@ class PasteError extends Error {
 }
 
 const AREA_OF_INJURY_DATA = [
+    {
+        "data-value": "01100",
+        "title": "01100 - BRAIN"
+    },
     {
         "data-value": "01200",
         "title": "01200 - SCALP"
@@ -1346,6 +1350,10 @@ const AREA_OF_INJURY_DATA = [
 ]
 
 const NATURE_OF_INJURY_DATA = [
+    {
+        "data-value": "01000",
+        "title": "01000 - TRAUMATC INJ-BONES,NERVES,SPINALCORD,UNS"
+    },
     {
         "data-value": "01100",
         "title": "01100 - DISLOCATIONS"
