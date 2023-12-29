@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      8.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -14,6 +14,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1/';
 const CLINIC_ID_INDEX = 5;
 const IS_SCHEDULE_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/schedules/
 const WARNING_COLOR = '#E63B16';
+const INFO_COLOR = '#8B8000';
 const SUCCESS_COLOR = '#228B22';
 const PROGRESS_NOTE_FORM_ID = "b36b4514-c069-44d1-9945-0500e2247f0c";
 const DATE_SELECTION_ID = "select_day";
@@ -253,8 +254,21 @@ function toDateObject(input) {
   const monthName = dateParts[1];
   const month = monthNames.indexOf(monthName);
   const day = parseInt(dateParts[2].replace(/\D/g, ''));
-  const year = new Date().getFullYear();
 
+   // Towards the end of December when attempted to print progress notes for the new year, the code assumes the current year when the tool is executed. 
+   // Here we add a check to see if the current month/day is larger than the current 
+  const now = new Date();
+  const nowDay = now.getDate();
+  const nowMonth = now.getMonth();
+  let year = now.getFullYear();
+  if(nowMonth > month || (nowMonth == month && nowDay > day)) {
+    if (nowMonth == 11 && month == 0) {
+      year++;
+      infoAlert("FYI: You are printing notes for a different year!", "Configured to assume the target year is " + year)
+    } else {
+        throw new UserError("Invalid Print Progress Notes Attempt!", "You cannot print progress notes for dates in the past.")
+    }
+  }
   const formattedDate = new Date(Date.UTC(year, month, day));
   return formattedDate;
 }
@@ -400,6 +414,9 @@ const createAndPrintGiantPdf = async (pdfObjects) => {
 
 function warningAlert(title, message){
     showNonBlockingAlert(title, message, WARNING_COLOR);
+}
+function infoAlert(title, message){
+    showNonBlockingAlert(title, message, INFO_COLOR);
 }
 function successAlert(title, message){
     showNonBlockingAlert(title, message, SUCCESS_COLOR);
