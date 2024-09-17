@@ -36,7 +36,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
                 goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Unsign Previous";
                 let backButton = goBackButtonSpan.querySelector("button");
                 backButton.id = BACK_BUTTON_ID;
-                backButton.disabled = true;
+                disableButton();
                 backButton.addEventListener("click", unsign);
                 buttonGroup.appendChild(goBackButtonSpan);
 
@@ -57,7 +57,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         const observer = new MutationObserver(mutations => {
             for (const mutation of mutations) {
                 if (mutation.type === 'characterData') {
-                    document.getElementById(BACK_BUTTON_ID).disabled = true;
+                    disableButton();
                     window.previousSignedId = null;
                 }
             }
@@ -84,7 +84,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
     function signClicked() {
         let uuid = document.querySelector("div.current_result_uuid").id;
         window.previousSignedId = uuid;
-        document.getElementById(BACK_BUTTON_ID).disabled = false;
+        enableButton();
     }
 
     function unsign(){
@@ -101,7 +101,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         .then(json => {
             displaySpinner("Loading previously signed result");
             window.previousSignedId = null;
-            document.getElementById(BACK_BUTTON_ID).disabled = true;
+            disableButton();
             refreshResults();
             waitForUnsignedResult(json, function(anchor) { 
                 anchor.click();
@@ -112,6 +112,18 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
             warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
             removeSpinner();
         });
+    }
+
+    function disableButton() {
+        if (document.getElementById(BACK_BUTTON_ID)) {
+            document.getElementById(BACK_BUTTON_ID).disabled = true;
+        }
+    }
+
+    function enableButton() {
+        if (document.getElementById(BACK_BUTTON_ID)) {
+            document.getElementById(BACK_BUTTON_ID).disabled = false;
+        }
     }
 
     function waitForUnsignedResult(resultJson, callback) {
