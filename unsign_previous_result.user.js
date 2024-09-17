@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Unsign Prevous Result
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      1.1
 // @description  Provide a button to previously signed results in Arya Results Page
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/results
@@ -13,7 +13,6 @@ const CLINIC_ID_INDEX = 5;
 const IS_RESULTS_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/results$/;
 const TEST_UUID = "e3250adb-07a9-40fe-b300-e0c6a7e77a0e";
 const BACK_BUTTON_ID = "backButton";
-const RESULTS_INPUT_SEARCH_ID = "mat-input-0"; 
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
 
@@ -73,8 +72,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
     }
 
     function inputSearch(value) {
-        let inputBox = document.getElementById(RESULTS_INPUT_SEARCH_ID);
-        console.log(inputBox);
+        let inputBox = document.querySelector('input[name="search"]');
         inputBox.value = value;
         const inputEvent = new Event('input', {
             bubbles: true,
