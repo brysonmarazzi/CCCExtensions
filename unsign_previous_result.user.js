@@ -30,17 +30,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         waitForElement("div.panel-header", function(panelHeader) {
             // Create back button IF it doesn't exist
             if (document.getElementById(BACK_BUTTON_ID) === null){
-                let buttonGroup = panelHeader.children[1];
-                let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
-                let goBackButtonSpan = signButtonSpan.cloneNode(true);
-                goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Unsign Previous";
-                let backButton = goBackButtonSpan.querySelector("button");
-                backButton.id = BACK_BUTTON_ID;
-                disableButton();
-                backButton.addEventListener("click", unsign);
-                buttonGroup.appendChild(goBackButtonSpan);
-
-                signButtonSpan.querySelector("button").addEventListener("click", signClicked)
+                createUnsignButton(panelHeader);
             }
         });
         waitForElement("#mat-select-value-3", function(div){
@@ -51,6 +41,19 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
             console.log(div)
             observeChangesInResultFiltering(div);
         })
+    }
+
+    function createUnsignButton(panelHeader){
+        let buttonGroup = panelHeader.children[1];
+        let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
+        let goBackButtonSpan = signButtonSpan.cloneNode(true);
+        goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Unsign Previous";
+        let backButton = goBackButtonSpan.querySelector("button");
+        backButton.id = BACK_BUTTON_ID;
+        disableButton();
+        backButton.addEventListener("click", unsign);
+        buttonGroup.appendChild(goBackButtonSpan);
+        signButtonSpan.querySelector("button").addEventListener("click", signClicked)
     }
 
     function observeChangesInResultFiltering(targetNode){
@@ -135,12 +138,17 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
             waitForElement("ul.efax_outbox_patient_list", function(ulList){
                 let anchors = ulList.querySelectorAll("a");
                 let element = Array.from(anchors).find(anchor => { 
-                    let firstName = resultJson["patient"]["first_name"].trim().toLowerCase();
-                    let lastName = resultJson["patient"]["last_name"].trim().toLowerCase();
-                    let title = resultJson["title"].trim().toLowerCase();
-                    let category = resultJson["category"].trim().toLowerCase();
-                    let listItemText = anchor.children[0].innerText.toLowerCase();
-                    return listItemText.includes(firstName) && listItemText.includes(lastName) && listItemText.includes(title) && listItemText.includes(category);
+                    let firstName = resultJson["patient"]["first_name"]?.trim()?.toLowerCase();
+                    let lastName = resultJson["patient"]["last_name"]?.trim()?.toLowerCase();
+                    let title = resultJson["title"]?.trim()?.toLowerCase();
+                    let category = resultJson["category"]?.trim()?.toLowerCase();
+
+                    let [liNames, liCategoryTitle] = anchor.querySelector("span.list-title").innerText.split("\n");
+                    let liLastName = liNames.split(",")[0]?.trim()?.toLowerCase();
+                    let liFirstName = liNames.split(",")[1]?.trim()?.toLowerCase();
+                    let liCategory = liCategoryTitle.split("-")[0]?.trim()?.toLowerCase();
+                    let liTitle = liCategoryTitle.split("-")[1]?.trim()?.toLowerCase();
+                    return (liFirstName == firstName) && (liLastName == lastName) && (liCategory == category) && (liTitle == title);
                 })
                 if (element) {
                     callback(element);
@@ -210,7 +218,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         alertDiv.appendChild(title);
         alertDiv.appendChild(message);
         alertDiv.style.position = 'fixed';
-        alertDiv.style.top = '94%';
+        alertDiv.style.top = '86%';
         alertDiv.style.left = '50%';
         alertDiv.style.transform = 'translate(-50%, -50%)';
         alertDiv.style.backgroundColor = color;
