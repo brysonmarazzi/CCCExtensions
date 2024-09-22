@@ -32,6 +32,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
             if (document.getElementById(BACK_BUTTON_ID) === null){
                 createUnsignButton(panelHeader);
             }
+            disableButton();
         });
         waitForElement("#mat-select-value-3", function(div){
             console.log(div)
@@ -50,7 +51,6 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Unsign Previous";
         let backButton = goBackButtonSpan.querySelector("button");
         backButton.id = BACK_BUTTON_ID;
-        disableButton();
         backButton.addEventListener("click", unsign);
         buttonGroup.appendChild(goBackButtonSpan);
         signButtonSpan.querySelector("button").addEventListener("click", signClicked)
@@ -129,6 +129,11 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         }
     }
 
+    function capitalize(str) {
+        if (!str) return str; // Check if the string is empty or null
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
     function waitForUnsignedResult(resultJson, callback) {
         const maxAttempts = 10;
         const initialDelay = 500; // milliseconds
@@ -137,23 +142,35 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         function checkUnsigedResult() {
             waitForElement("ul.efax_outbox_patient_list", function(ulList){
                 let anchors = ulList.querySelectorAll("a");
-                let element = Array.from(anchors).find(anchor => { 
-                    let firstName = resultJson["patient"]["first_name"]?.trim()?.toLowerCase() ?? '';
-                    let lastName = resultJson["patient"]["last_name"]?.trim()?.toLowerCase() ?? '';
-                    let title = resultJson["title"]?.trim()?.toLowerCase() ?? '';
-                    let category = resultJson["category"]?.trim()?.toLowerCase() ?? '';
+                let firstName = resultJson["patient"]["first_name"]?.trim()?.toLowerCase() ?? '';
+                let lastName = resultJson["patient"]["last_name"]?.trim()?.toLowerCase() ?? '';
+                let title = resultJson["title"]?.trim()?.toLowerCase() ?? '';
+                let category = resultJson["category"]?.trim()?.toLowerCase() ?? '';
 
+                console.log("RESULT(s) FOR: ", firstName, lastName, category, title)
+                let element = Array.from(anchors).find(anchor => { 
+                    console.log("RESULT COUNT: " + anchors.length)
                     let [liNames, liCategoryTitle] = anchor.querySelector("span.list-title").innerText.split("\n");
                     let liLastName = liNames.split(",")[0]?.trim()?.toLowerCase() ?? '';
                     let liFirstName = liNames.split(",")[1]?.trim()?.toLowerCase() ?? '';
                     let liCategory = liCategoryTitle.split("-")[0]?.trim()?.toLowerCase() ?? '';
                     let liTitle = liCategoryTitle.split("-")[1]?.trim()?.toLowerCase() ?? '';
-                    console.log("RESULT", firstName, lastName, category, title)
                     console.log("LIST ITEM", liFirstName, liLastName, liCategory, liTitle)
-                    return (liFirstName == firstName) && (liLastName == lastName) && (liCategory == category) && (liTitle == title);
+                    let found = (liFirstName == firstName) && (liLastName == lastName) && (liCategory == category) && (liTitle == title); 
+                    if (found){
+                        successAlert("Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"");
+                    }
+                    return found;
                 })
                 if (element) {
                     callback(element);
+                } else if(anchors.length == 20 && firstName) {
+                    // This means all anchors have been loaded and checked and it is not in the list - probably because it was lazy loaded on new page!
+                    successAlert(
+                        "Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"",
+                        "Find the loaded result in the list on the left"
+                    );
+                    removeSpinner();
                 } else {
                     attempt++;
                     if (attempt < maxAttempts) {
@@ -201,6 +218,10 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         if(urlRegex.test(document.location.href)){
             callback();
         }
+    }
+
+    function successAlert(title, message){
+        showNonBlockingAlert(title, message, SUCCESS_COLOR);
     }
 
     function warningAlert(title, message){
