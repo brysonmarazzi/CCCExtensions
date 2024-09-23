@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Unsign Prevous Result
 // @namespace    http://tampermonkey.net/
-// @version      3.1
+// @version      4.0
 // @description  Provide a button to previously signed results in Arya Results Page
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*/results
