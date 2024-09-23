@@ -11,10 +11,10 @@
 
 const CLINIC_ID_INDEX = 5;
 const IS_RESULTS_PAGE_REGEX = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/results$/;
-const TEST_UUID = "e3250adb-07a9-40fe-b300-e0c6a7e77a0e";
 const BACK_BUTTON_ID = "backButton";
 const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
+const MAX_PAGE_SIZE = 50;
 
 const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
 
@@ -35,11 +35,9 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
             disableButton();
         });
         waitForElement("#mat-select-value-3", function(div){
-            console.log(div)
             observeChangesInResultFiltering(div);
         })
         waitForElement("#mat-select-value-1", function(div){
-            console.log(div)
             observeChangesInResultFiltering(div);
         })
     }
@@ -69,9 +67,12 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
     }
 
     function refreshResults() {
-        console.log("Refreshing the results..");
+        console.log("Refreshing the results...");
         inputSearch(' ');
-        return setTimeout(inputSearch, 500, '');
+        return setTimeout(
+            () => { inputSearch(''); removeSpinner(); }, 
+            500
+        );
     }
 
     function inputSearch(value) {
@@ -102,19 +103,48 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         })
         .then(result=> result.json())
         .then(json => {
-            displaySpinner("Loading previously signed result");
             window.previousSignedId = null;
             disableButton();
-            refreshResults();
-            waitForUnsignedResult(json, function(anchor) { 
-                anchor.click();
-                removeSpinner();
-            })
+            if (!json) {
+                throw Error("Unsign did not work!");
+            }
+            displaySpinner("Loading previously signed result");
+            return findResult(uuid);
+        })
+        .then(result => {
+            if (result) {
+                console.log("Result")
+                console.log(result)
+                successAlert(
+                    "Success! Search for the result in the list on the left",
+                    buildSuccessResponse(result),
+                )
+                refreshResults();
+            } else {
+                throw Error("Failed for Result uuid = " + uuid);
+            }
         })
         .catch(error => {
             warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
             removeSpinner();
         });
+    }
+
+    function buildSuccessResponse(result) {
+        let message = ''
+        if (result?.title) {
+            message += result.title + " - "
+        }
+        if (result?.category) {
+            message += result.category + " - "
+        }
+        if (result?.patient?.first_name) {
+            message += result.patient.first_name + " "
+        }
+        if (result?.patient?.last_name) {
+            message += result.patient.last_name
+        }
+        return message;
     }
 
     function disableButton() {
@@ -129,59 +159,119 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         }
     }
 
-    function capitalize(str) {
-        if (!str) return str; // Check if the string is empty or null
-        return str.charAt(0).toUpperCase() + str.slice(1);
+    function getCurrentUser(){
+        // Make the GET request
+        return fetch(ARYA_URL_ROOT + window.clinic_id, {
+            method: 'GET',
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Handle the response data
+            return data.users;
+        })
+        .then(users => {
+            let current_user = document.getElementById("selectuser").querySelectorAll("span")[1].innerHTML;
+            return users.find(user => (user.first_name + " " + user.last_name).trim() == current_user);
+        })
+        .catch(error => {
+            // Handle any errors
+            console.error(error);
+        });
     }
 
-    function waitForUnsignedResult(resultJson, callback) {
-        const maxAttempts = 10;
-        const initialDelay = 500; // milliseconds
-        let attempt = 0;
-
-        function checkUnsigedResult() {
-            waitForElement("ul.efax_outbox_patient_list", function(ulList){
-                let anchors = ulList.querySelectorAll("a");
-                let firstName = resultJson["patient"]["first_name"]?.trim()?.toLowerCase() ?? '';
-                let lastName = resultJson["patient"]["last_name"]?.trim()?.toLowerCase() ?? '';
-                let title = resultJson["title"]?.trim()?.toLowerCase() ?? '';
-                let category = resultJson["category"]?.trim()?.toLowerCase() ?? '';
-
-                console.log("RESULT(s) FOR: ", firstName, lastName, category, title)
-                let element = Array.from(anchors).find(anchor => { 
-                    console.log("RESULT COUNT: " + anchors.length)
-                    let [liNames, liCategoryTitle] = anchor.querySelector("span.list-title").innerText.split("\n");
-                    let liLastName = liNames.split(",")[0]?.trim()?.toLowerCase() ?? '';
-                    let liFirstName = liNames.split(",")[1]?.trim()?.toLowerCase() ?? '';
-                    let liCategory = liCategoryTitle.split("-")[0]?.trim()?.toLowerCase() ?? '';
-                    let liTitle = liCategoryTitle.split("-")[1]?.trim()?.toLowerCase() ?? '';
-                    console.log("LIST ITEM", liFirstName, liLastName, liCategory, liTitle)
-                    let found = (liFirstName == firstName) && (liLastName == lastName) && (liCategory == category) && (liTitle == title); 
-                    if (found){
-                        successAlert("Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"");
-                    }
-                    return found;
-                })
-                if (element) {
-                    callback(element);
-                } else if(anchors.length == 20 && firstName) {
-                    // This means all anchors have been loaded and checked and it is not in the list - probably because it was lazy loaded on new page!
-                    successAlert(
-                        "Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"",
-                        "Find the loaded result in the list on the left"
-                    );
-                    removeSpinner();
-                } else {
-                    attempt++;
-                    if (attempt < maxAttempts) {
-                        const delay = initialDelay * Math.pow(2, attempt);
-                        setTimeout(checkUnsigedResult, delay);
-                    }
-                }
-            })
+    async function getResultsList(offset){
+        let currentUser = await getCurrentUser();
+        let urlParams = {
+            limit: MAX_PAGE_SIZE,
+            offset: offset,
+            user_id: currentUser.uuid
         }
-        checkUnsigedResult();
+        console.log("Get Results list for uuid: "+currentUser.uuid);
+        // Make the GET request
+        const queryParams = new URLSearchParams(urlParams);
+        const fullUrl = `${ARYA_URL_ROOT + window.clinic_id + '/results.json'}?${queryParams.toString()}`;
+        return fetch(fullUrl, {
+            method: 'GET',
+        })
+        .then(response => response.json())
+        .catch(error => { warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message); });
     }
+
+    async function findResult(targetResultUuid) {
+        let offset = 0; // Initial offset value
+        let hasMoreData = true;
+
+        while (hasMoreData) {
+            try {
+                // Make the API call
+                const results = await getResultsList(offset);
+
+                // Check if its the target
+                let targetResult = results.find(result => { return result.uuid == targetResultUuid });
+                // console.log(results)
+                if (targetResult) return targetResult;
+
+                // Check if there are more pages to fetch
+                hasMoreData = results && results.length === MAX_PAGE_SIZE;
+                console.log("Has More data: " + hasMoreData);
+                offset += results.length; // Update the offset value
+            } catch (error) {
+                // Handle any errors that occur during the API call
+                console.error('An error occurred:', error);
+                break; // Exit the loop in case of an error
+            }
+        }
+        return null;
+    }
+
+    // function waitForUnsignedResult(resultJson, callback) {
+    //     const maxAttempts = 10;
+    //     const initialDelay = 200; // milliseconds
+    //     let attempt = 0;
+
+    //     function checkUnsigedResult() {
+    //         waitForElement("ul.efax_outbox_patient_list", function(ulList){
+    //             let anchors = ulList.querySelectorAll("a");
+    //             let firstName = resultJson["patient"]["first_name"]?.trim()?.toLowerCase() ?? '';
+    //             let lastName = resultJson["patient"]["last_name"]?.trim()?.toLowerCase() ?? '';
+    //             let title = resultJson["title"]?.trim()?.toLowerCase() ?? '';
+    //             let category = resultJson["category"]?.trim()?.toLowerCase() ?? '';
+
+    //             console.log("RESULT(s) FOR: ", firstName, lastName, category, title)
+    //             let element = Array.from(anchors).find(anchor => { 
+    //                 console.log("RESULT COUNT: " + anchors.length)
+    //                 let [liNames, liCategoryTitle] = anchor.querySelector("span.list-title").innerText.split("\n");
+    //                 let liLastName = liNames.split(",")[0]?.trim()?.toLowerCase() ?? '';
+    //                 let liFirstName = liNames.split(",")[1]?.trim()?.toLowerCase() ?? '';
+    //                 let liCategory = liCategoryTitle.split("-")[0]?.trim()?.toLowerCase() ?? '';
+    //                 let liTitle = liCategoryTitle.split("-")[1]?.trim()?.toLowerCase() ?? '';
+    //                 console.log("LIST ITEM", liFirstName, liLastName, liCategory, liTitle)
+    //                 let found = (liFirstName == firstName) && (liLastName == lastName) && (liCategory == category) && (liTitle == title); 
+    //                 if (found){
+    //                     successAlert("Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"");
+    //                 }
+    //                 return found;
+    //             })
+    //             if (element) {
+    //                 callback(element);
+    //             } else if(anchors.length == 20 && firstName) {
+    //                 // This means all anchors have been loaded and checked and it is not in the list - probably because it was lazy loaded on new page!
+    //                 successAlert(
+    //                     "Sucessfully reinstated result for \""+ capitalize(firstName) + " " + capitalize(lastName) + "\"",
+    //                     "Find the loaded result in the list on the left"
+    //                 );
+    //                 removeSpinner();
+    //             } else {
+    //                 attempt++;
+    //                 if (attempt < maxAttempts) {
+    //                     const delay = initialDelay * Math.pow(2, attempt);
+    //                     setTimeout(checkUnsigedResult, delay);
+    //                 }
+    //             }
+    //         })
+    //     }
+    //     checkUnsigedResult();
+    // }
 
     function waitForElement(elementId, callback) {
         const maxAttempts = 10;
