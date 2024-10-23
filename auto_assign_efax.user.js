@@ -17,6 +17,7 @@ const PDF_JS_WORKER_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.37
 const TARGET_EFAX_ELEMENT_ID = 'imagerotate';
 const AUTO_ASSIGN_BUTTON_ID = 'autoAssignButtonId';
 const MAX_PAGE_SIZE = 50;
+const UUID_CACHE = "uuidTesseractCache";
 
 (function() {
     let overlay = null;
@@ -24,8 +25,10 @@ const MAX_PAGE_SIZE = 50;
     Promise.all([initPDFJS(), initTesseract(navigator.hardwareConcurrency)]).then(([_, scheduler]) => {
         window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
         window.onload = observeUrlChange(IS_EFAX_PAGE, onPageLoad);
+        const cache = loadCache();
 
         function onPageLoad(){
+              // Check if the result is already cached
             waitForElement("div.panel-header", function(panelHeader) {
                 if (document.getElementById(AUTO_ASSIGN_BUTTON_ID) === null){
                     createAutoAssignButton(panelHeader);
@@ -35,24 +38,62 @@ const MAX_PAGE_SIZE = 50;
         }
 
         async function autoAssignAll(){
+            // let regex = /(?<lastName>\w+)\s+(?<firstName>\w+)\n(?<numberId>\d{9})\s+(?<month>\w{3})\s+(?<day>\d{1,2}),\s+(?<year>\d{4})\s+(?<gender>[MF])/;
             console.log("Auto Assign All clicked")
             const efaxes = await listIncomingEfaxes()
             console.log(efaxes)
             displaySpinner("Auto Assigning Incoming efaxes")
             console.time('Process All Efaxes Time');
-            Promise.all(efaxes.map(efax => handleEfaxId(efax.id)))
-            .then(efaxesText => {
+            Promise.all(efaxes.map(efax => extractTextFromEfax(efax.id)))
+            .then(efaxResults => {
+                let filtered = efaxResults.filter(efaxResult => {
+                    return parseText(efaxResult.text) != null
+                })
+                console.log(filtered)
                 console.timeEnd('Process All Efaxes Time');
-                console.log(efaxesText)
                 scheduler.terminate();
-            }).finally(removeSpinner)
+            })
+            .catch(e => console.error(e))
+            .finally(removeSpinner)
         }
 
-        async function handleEfaxId(uuid) {
+        // [
+        //     "Kussat, Carol",
+        //     "9051697879 Jun 08,1939 Female",
+        //     "2306224482 ! 2306224482 cakussal@gmail.com Progress Notes",
+        //     "1933000 Mill La 9 Road, Abbots 0rd, BC, V2$2A3",
+        //     "Date Oct 22, 2024",
+        //     "9“ KO , 69161",
+        //     "gé We) g meil",
+        //     ""
+        // ]
+        // TODO PARSE HERE
+        function parseText(text) {
+            let lines = text.split('\n')
+            if (lines.length > 1) {
+                lines[0]
+            }
+        }
+
+        async function extractTextFromEfax(uuid) {
+            // Check if the result is already cached
+            if (cache.has(uuid)) {
+                console.log('Returning cached result');
+                return { uuid: uuid, text: cache.get(uuid) }
+            }
+
             const link = await getEfaxPdfUrl(uuid);
             const pdfBlob = await fetchFile(link);
             const imageContext = await convertPdfBlobToImage(pdfBlob);
-            return readImageText(imageContext);
+            const text = await readImageText(imageContext); 
+
+            // Store the result in the cache
+            cache.set(uuid, text);
+
+            // Save the updated cache to localStorage
+            saveCache();
+
+            return { uuid: uuid, text: text }
         }
 
         async function fetchIncomingEfaxes(offset){
@@ -194,6 +235,18 @@ const MAX_PAGE_SIZE = 50;
             backButton.addEventListener("click", autoAssignAll);
             buttonGroup.appendChild(goBackButtonSpan);
         }
+
+        // Function to load cache from localStorage
+        function loadCache() {
+            const cachedData = localStorage.getItem(UUID_CACHE);
+            return cachedData ? new Map(JSON.parse(cachedData)) : new Map();
+        }
+
+        // Function to save cache to localStorage
+        function saveCache() {
+            localStorage.setItem(UUID_CACHE, JSON.stringify([...cache]));
+        }
+
 
         function disableButton() {
             if (document.getElementById(AUTO_ASSIGN_BUTTON_ID)) {
