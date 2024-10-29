@@ -18,6 +18,9 @@ const TARGET_EFAX_ELEMENT_ID = 'imagerotate';
 const AUTO_ASSIGN_BUTTON_ID = 'autoAssignButtonId';
 const MAX_PAGE_SIZE = 50;
 const UUID_CACHE = "uuidTesseractCache";
+const NAME_LINE_REGEX = /([A-Za-z-]+),\s*([A-Za-z]+)/i;
+const PHN_LINE_REGEX = /(\d{10})\s*([A-Za-z]{3})\s*(\d{2}),\s*(\d{4})\s*(Male|Female)/i;
+const SPINNER_TEXT_ID = "spinnerTextId";
 
 (function() {
     let overlay = null;
@@ -38,41 +41,76 @@ const UUID_CACHE = "uuidTesseractCache";
         }
 
         async function autoAssignAll(){
-            // let regex = /(?<lastName>\w+)\s+(?<firstName>\w+)\n(?<numberId>\d{9})\s+(?<month>\w{3})\s+(?<day>\d{1,2}),\s+(?<year>\d{4})\s+(?<gender>[MF])/;
-            console.log("Auto Assign All clicked")
             const efaxes = await listIncomingEfaxes()
-            console.log(efaxes)
-            displaySpinner("Auto Assigning Incoming efaxes")
+            displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
             console.time('Process All Efaxes Time');
-            Promise.all(efaxes.map(efax => extractTextFromEfax(efax.id)))
-            .then(efaxResults => {
-                let filtered = efaxResults.filter(efaxResult => {
-                    return parseText(efaxResult.text) != null
-                })
-                console.log(filtered)
-                console.timeEnd('Process All Efaxes Time');
-                scheduler.terminate();
+            const efax_results = await allProgress(efaxes.map(efax => extractTextFromEfax(efax.id)), (p) => {
+                updateSpinnerProgress(p)
+            });
+            console.timeEnd('Process All Efaxes Time');
+            scheduler.terminate();
+            let parsed_results = efax_results
+                .filter(isProgressNote)
+                .map(parseProgressNote)
+            let with_patient_data = await Promise.all(parsed_results.map(addPatientData))
+            console.log(with_patient_data)
+            removeSpinner()
+        }
+
+        // A function to track the progress of Promise.ALL
+        // https://stackoverflow.com/questions/42341331/es6-promise-all-progress 
+        function allProgress(proms, progress_cb) {
+            let d = 0;
+            progress_cb(0);
+            for (const p of proms) {
+                p.then(()=> {    
+                    d ++;
+                    progress_cb( (d * 100) / proms.length );
+                });
+            }
+            return Promise.all(proms);
+        }
+
+        async function addPatientData(efax_result){
+            let phn = efax_result.phn;
+            return fetch(ARYA_URL_ROOT + window.clinic_id + '/patients.json?limit=1&offset=0&term=' + phn.replace(/\s/g, ""), {
+                method: 'GET',
             })
-            .catch(e => console.error(e))
-            .finally(removeSpinner)
+            .then(response => response.json())
+            .then(jsonList => {
+                if (jsonList.length == 1) {
+                    let data = jsonList[0];
+                    if (data.last_name == efax_result.last_name) {
+                        return { ...efax_result, patient_data: data }
+                    } else {
+                        console.log("Patient found in Arya but last name does not match Expected: " + efax_result.last_name + " Actual: " + data.last_name);
+                    }
+                } else {
+                    console.log("There is no patient found in Arya with PHN: " + phn + " Length: " + jsonList.length);
+                }
+                return { ...efax_result, patient_data: null }
+            })
         }
 
         // [
-        //     "Kussat, Carol",
-        //     "9051697879 Jun 08,1939 Female",
-        //     "2306224482 ! 2306224482 cakussal@gmail.com Progress Notes",
-        //     "1933000 Mill La 9 Road, Abbots 0rd, BC, V2$2A3",
-        //     "Date Oct 22, 2024",
-        //     "9“ KO , 69161",
-        //     "gé We) g meil",
-        //     ""
+        //     "Nadal, Rafael",
+        //     "1234567890 Oct 09,1997 Male",
         // ]
-        // TODO PARSE HERE
-        function parseText(text) {
-            let lines = text.split('\n')
+        // { uuid: uuid, text: cache.get(uuid) }
+        function isProgressNote(efax_result) {
+            let lines = efax_result.text.split('\n')
             if (lines.length > 1) {
-                lines[0]
+                return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
+            } else {
+                return false
             }
+        }
+
+        function parseProgressNote(efax_result) {
+            let lines = efax_result.text.split('\n')
+            let last_name = NAME_LINE_REGEX.exec(lines[0])[1]
+            let phn = PHN_LINE_REGEX.exec(lines[1])[1]
+            return { ...efax_result, phn: phn, last_name: last_name }
         }
 
         async function extractTextFromEfax(uuid) {
@@ -260,6 +298,13 @@ const UUID_CACHE = "uuidTesseractCache";
             }
         }
 
+        function updateSpinnerProgress(progress) {
+            let text = document.getElementById(SPINNER_TEXT_ID);
+            if (text) {
+                text.textContent = text.textContent.split("-")[0] + " - " + progress.toFixed(1) + "% complete"
+            }
+        }
+
         function displaySpinner(spinnerText) {
             overlay = document.createElement('div');
             overlay.style.position = 'fixed';
@@ -276,7 +321,8 @@ const UUID_CACHE = "uuidTesseractCache";
             const svgString = `<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" width="64px" height="64px" viewBox="0 0 128 128" xml:space="preserve"><rect x="0" y="0" width="100%" height="100%" fill="#FFFFFF" /><g><circle cx="16" cy="64" r="16" fill="#000000" fill-opacity="1"/><circle cx="16" cy="64" r="16" fill="#555555" fill-opacity="0.67" transform="rotate(45,64,64)"/><circle cx="16" cy="64" r="16" fill="#949494" fill-opacity="0.42" transform="rotate(90,64,64)"/><circle cx="16" cy="64" r="16" fill="#cccccc" fill-opacity="0.2" transform="rotate(135,64,64)"/><animateTransform attributeName="transform" type="rotate" values="0 64 64;315 64 64;270 64 64;225 64 64;180 64 64;135 64 64;90 64 64;45 64 64" calcMode="discrete" dur="800ms" repeatCount="indefinite"></animateTransform></g></svg>`;
 
             const text = document.createElement('p');
-            text.textContent = spinnerText + '...'; // Replace with your desired text content
+            text.setAttribute("id", SPINNER_TEXT_ID);
+            text.textContent = spinnerText
             text.style.position = 'absolute';
             text.style.top = '48%';
             text.style.left = '50%';
