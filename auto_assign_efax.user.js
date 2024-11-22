@@ -41,7 +41,7 @@ const SPINNER_TEXT_ID = "spinnerTextId";
         }
 
         async function autoAssignAll(){
-            const efaxes = await listIncomingEfaxes()
+            const efaxes = await listIncomingScannedEfaxes()
             displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
             console.time('Process All Efaxes Time');
             const efax_results = await allProgress(efaxes.map(efax => extractTextFromEfax(efax.id)), (p) => {
@@ -54,6 +54,7 @@ const SPINNER_TEXT_ID = "spinnerTextId";
                 .map(parseProgressNote)
             let with_patient_data = await Promise.all(parsed_results.map(addPatientData))
             console.log(with_patient_data)
+            promptSummary(with_patient_data)
             removeSpinner()
         }
 
@@ -151,7 +152,7 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             }
         }
 
-        async function listIncomingEfaxes() {
+        async function listIncomingScannedEfaxes() {
             let offset = 0; // Initial offset value
             let hasMoreData = true;
             let efaxes = []
@@ -160,11 +161,13 @@ const SPINNER_TEXT_ID = "spinnerTextId";
                 try {
                     // Make the API call
                     const result = await fetchIncomingEfaxes(offset);
+                    console.log(result)
 
                     // Check if there are more pages to fetch
                     hasMoreData = result && result.length === MAX_PAGE_SIZE;
                     offset += result.length; // Update the offset value
-                    efaxes = efaxes.concat(result); // .filter(efax => efax.unread == false && efax.title == null && efax.srfax_received_at == null)
+                    // If the date (srfax_receieved_at) is null, it means it was scanned
+                    efaxes = efaxes.concat(result.filter(efax => efax.srfax_received_at == null));
                 } catch (error) {
                     // Handle any errors that occur during the API call
                     console.error('An error occurred:', error);
@@ -263,6 +266,29 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             }
         };
 
+        // Function to create and open the file in a new tab
+        function openFileInNewTab(filename, content) {
+            if (!confirm("45 results were automatically assigned to patients. Want to see which ones?")) {
+                return;
+            }
+            // Create a Blob from the content
+            const blob = new Blob([content], { type: 'text/html' }); // Use 'text/html' for HTML files
+            
+            // Create a temporary link element
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.target = '_blank'; // Set to open in a new tab
+            link.textContent = 'Click here to open the file';
+            
+            // Append the link to the document and click it
+            document.body.appendChild(link);
+            link.click();
+            
+            // Clean up
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
+
         function createAutoAssignButton(panelHeader){
             let buttonGroup = panelHeader.children[1];
             let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
@@ -272,6 +298,27 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             backButton.id = AUTO_ASSIGN_BUTTON_ID;
             backButton.addEventListener("click", autoAssignAll);
             buttonGroup.appendChild(goBackButtonSpan);
+        }
+
+        function promptSummary() {
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Generated File</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; color: #333; text-align: center; }
+                        h1 { color: #007bff; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Hello, world!</h1>
+                    <p>This file was generated automatically and opened in a new tab!</p>
+                </body>
+                </html>
+            `;
+            openFileInNewTab('generatedFile.html', htmlContent);
         }
 
         // Function to load cache from localStorage
