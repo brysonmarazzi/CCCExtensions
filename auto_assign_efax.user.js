@@ -21,6 +21,12 @@ const UUID_CACHE = "uuidTesseractCache";
 const NAME_LINE_REGEX = /([A-Za-z-]+),\s*([A-Za-z]+)/i;
 const PHN_LINE_REGEX = /(\d{10})\s*([A-Za-z]{3})\s*(\d{2}),\s*(\d{4})\s*(Male|Female)/i;
 const SPINNER_TEXT_ID = "spinnerTextId";
+const SCAN_SCAN_UUID = "35036200-1fe3-4f88-a3cf-96a88753b6d1";
+const WARNING_COLOR = '#E63B16';
+const SUCCESS_COLOR = '#228B22';
+const INFO_COLOR = '#8B8000';
+
+const TEST_TEXT = 'Fake Efax for testing\n';
 
 (function() {
     let overlay = null;
@@ -31,7 +37,7 @@ const SPINNER_TEXT_ID = "spinnerTextId";
         const cache = loadCache();
 
         function onPageLoad(){
-              // Check if the result is already cached
+            // Check if the result is already cached
             waitForElement("div.panel-header", function(panelHeader) {
                 if (document.getElementById(AUTO_ASSIGN_BUTTON_ID) === null){
                     createAutoAssignButton(panelHeader);
@@ -44,18 +50,56 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             const efaxes = await listIncomingScannedEfaxes()
             displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
             console.time('Process All Efaxes Time');
-            const efax_results = await allProgress(efaxes.map(efax => extractTextFromEfax(efax.id)), (p) => {
-                updateSpinnerProgress(p)
-            });
-            console.timeEnd('Process All Efaxes Time');
-            scheduler.terminate();
-            let parsed_results = efax_results
-                .filter(isProgressNote)
-                .map(parseProgressNote)
-            let with_patient_data = await Promise.all(parsed_results.map(addPatientData))
-            console.log(with_patient_data)
-            promptSummary(with_patient_data)
-            removeSpinner()
+            try {
+                const efax_results = await allProgress(efaxes.map(efax => extractTextFromEfax(efax.id)), (p) => {
+                    updateSpinnerProgress(p)
+                });
+                console.log(efax_results)
+                console.timeEnd('Process All Efaxes Time');
+                scheduler.terminate();
+                let parsed_results = efax_results.filter(isProgressNote).map(parseProgressNote)
+                let with_patient_results = await Promise.all(parsed_results.map(addPatientData))
+                let updated_results = await Promise.all(with_patient_results.map(updateEfaxRecord))
+                let inserted_results = await Promise.all(updated_results.map(assignResultToPatient))
+                removeSpinner()
+                if (inserted_results.length > 0) {
+                    successAlert("Successfully assigned " + inserted_results.length + " progress notes!", "See the downloaded summary file for details")
+                    downloadSummaryLog(inserted_results)
+                } else {
+                    infoAlert("There are no progress notes to assign at this time.")
+                }
+            } catch (error) {
+                warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
+            } finally {
+                removeSpinner()
+            }
+        }
+
+        function assignResultToPatient(efax_result) {
+            console.log("Assigning efax_result: " + efax_result.id);
+            console.log(efax_result);
+            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/save_and_clear/?uuid=" + efax_result.id, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            })
+            .then(response => response.json())
+            .then((inserted) => { return { ...inserted, patient: efax_result.patient }})
+        }
+
+        function updateEfaxRecord(efax_result) {
+            console.log("Updating efax_result: " + efax_result.uuid);
+            console.log(efax_result)
+            let patient_uuid = efax_result.patient_data.id;
+            if (patient_uuid != "ecdfec0e-597d-4ac3-9ffd-4454b5291815") {
+                confirm("The patient you are about to update does not match Rafael Nadal's uuid. Are you sure?")
+            }
+            let payload = { "id":efax_result.uuid, "title":"Progress Notes", document_type:"note", user_id: SCAN_SCAN_UUID, patient_id: patient_uuid} 
+            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/incoming_faxes/" + efax_result.uuid, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
         }
 
         // A function to track the progress of Promise.ALL
@@ -99,15 +143,24 @@ const SPINNER_TEXT_ID = "spinnerTextId";
         // ]
         // { uuid: uuid, text: cache.get(uuid) }
         function isProgressNote(efax_result) {
-            let lines = efax_result.text.split('\n')
-            if (lines.length > 1) {
-                return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
-            } else {
-                return false
+            // TODO remove the testing code
+            if(efax_result.text==TEST_TEXT) { 
+                return true
             }
+            return false
+            // let lines = efax_result.text.split('\n')
+            // if (lines.length > 1) {
+            //     return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
+            // } else {
+            //     return false
+            // }
         }
 
         function parseProgressNote(efax_result) {
+            // TODO remove the testing code
+            if(efax_result.text==TEST_TEXT) { 
+                return { ...efax_result, phn: "1234123123", last_name: "Nadal" }
+            }
             let lines = efax_result.text.split('\n')
             let last_name = NAME_LINE_REGEX.exec(lines[0])[1]
             let phn = PHN_LINE_REGEX.exec(lines[1])[1]
@@ -266,29 +319,6 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             }
         };
 
-        // Function to create and open the file in a new tab
-        function openFileInNewTab(filename, content) {
-            if (!confirm("45 results were automatically assigned to patients. Want to see which ones?")) {
-                return;
-            }
-            // Create a Blob from the content
-            const blob = new Blob([content], { type: 'text/html' }); // Use 'text/html' for HTML files
-            
-            // Create a temporary link element
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.target = '_blank'; // Set to open in a new tab
-            link.textContent = 'Click here to open the file';
-            
-            // Append the link to the document and click it
-            document.body.appendChild(link);
-            link.click();
-            
-            // Clean up
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-        }
-
         function createAutoAssignButton(panelHeader){
             let buttonGroup = panelHeader.children[1];
             let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
@@ -300,25 +330,53 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             buttonGroup.appendChild(goBackButtonSpan);
         }
 
-        function promptSummary() {
-            const htmlContent = `
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Generated File</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; color: #333; text-align: center; }
-                        h1 { color: #007bff; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Hello, world!</h1>
-                    <p>This file was generated automatically and opened in a new tab!</p>
-                </body>
-                </html>
-            `;
-            openFileInNewTab('generatedFile.html', htmlContent);
+        function downloadSummaryLog(results) {
+            const content = results.map(formatResultForSummary).join('\n');
+            const filename = `efax_log_${getDateTimeForFileName()}.txt`;
+            downloadTxtFile(filename, content);
+        }
+
+        function formatResultForSummary(result, index) {
+            console.log("RESULT")
+            console.log(result)
+            const patient = result.patient;
+            return `${index + 1}. Efax ${result.document_id} assigned to '${patient.label}' with uuid ${patient.uuid}`
+        }
+
+        function downloadTxtFile(filename, content) {
+            // Create a Blob with the text content, including newlines
+            const blob = new Blob([content], { type: 'text/plain' });
+
+            // Generate a URL for the Blob
+            const url = URL.createObjectURL(blob);
+
+            // Create a temporary <a> element
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename; // Set the file name
+
+            // Append the link to the body and trigger the download
+            document.body.appendChild(link);
+            link.click();
+
+            // Clean up by removing the link and revoking the Blob URL
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function getDateTimeForFileName() {
+            const now = new Date();
+
+            // Extract components
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+
+            // Format as YYYY-MM-DD_HH-MM-SS
+            return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
         }
 
         // Function to load cache from localStorage
@@ -395,6 +453,55 @@ const SPINNER_TEXT_ID = "spinnerTextId";
             }
         }
     });
+
+    function successAlert(title, message){
+        showNonBlockingAlert(title, message, SUCCESS_COLOR);
+    }
+
+    function infoAlert(title){
+        showNonBlockingAlert(title, '', INFO_COLOR);
+    }
+
+    function warningAlert(title, message){
+        showNonBlockingAlert(title, message, WARNING_COLOR);
+    }
+
+    function showNonBlockingAlert(titletext, messagetext, color) {
+        const alertDiv = document.createElement('div');
+        // Create the title element
+        const title = document.createElement("h2");
+        title.textContent = titletext;
+
+        // Create the message element
+        const message = document.createElement("p");
+        message.textContent = messagetext;
+        // Append the title and message elements to the div
+        alertDiv.appendChild(title);
+        alertDiv.appendChild(message);
+        alertDiv.style.position = 'fixed';
+        alertDiv.style.top = '86%';
+        alertDiv.style.left = '50%';
+        alertDiv.style.transform = 'translate(-50%, -50%)';
+        alertDiv.style.backgroundColor = color;
+        alertDiv.style.color = '#fff';
+        alertDiv.style.padding = '10px 20px';
+        alertDiv.style.borderRadius = '4px';
+        alertDiv.style.zIndex = '9999';
+        alertDiv.style.opacity = '1.9';
+        alertDiv.style.transition = 'opacity 0.5s';
+        
+        document.body.appendChild(alertDiv);
+        
+        let seconds = messagetext ? (messagetext.split(" ").length / 3) * 1000 : 3000
+        seconds += titletext ? (titletext.split(" ").length / 3) * 1000 : 3000
+        
+        setTimeout(function() {
+            alertDiv.style.opacity = '0';
+            setTimeout(function() {
+                document.body.removeChild(alertDiv);
+            }, 500);
+        }, seconds);
+    }
 
     async function initTesseract(numWorkers) {
         return new Promise((resolve) => {
