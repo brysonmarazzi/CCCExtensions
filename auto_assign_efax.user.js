@@ -50,7 +50,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             const { uuid, text } = await extractTextFromEfax(efax.id);
             if (!isProgressNote(text)) {
                 // console.log("Recieved efax with text that does not match Progress Notes")
-                console.log(efax)
+                // console.log(efax)
                 return null;
             }
             const { phn, last_name } = parseProgressNote(text);
@@ -103,7 +103,8 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             .then(response => response.json())
             .catch(error => {
                 console.error(`Error assigning efax=${uuid} to patient: ${error}`)
-                return null
+                // return null
+                throw (error);
             })
         }
 
@@ -118,7 +119,8 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             .then(response => response.json())
             .catch(error => {
                 console.error(`Error updating efax record=${uuid}: ${error}`)
-                return null
+                // return null
+                throw (error);
             })
         }
 
@@ -150,7 +152,8 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             })
             .catch(error => {
                 console.error(`Error fetching patient with phn=${phn}: ${error}`)
-                return null
+                // return null
+                throw (error);
             })
         }
 
