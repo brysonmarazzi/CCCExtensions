@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -158,17 +158,12 @@ const TEST_TEXT = 'Fake Efax for testing\n';
         }
 
         function isProgressNote(text) {
-            if (text == TEST_TEXT) {
-                return true
+            let lines = text.split('\n').filter(line => line != '');
+            if (lines.length > 1) {
+                return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
             } else {
                 return false
             }
-            // let lines = text.split('\n').filter(line => line != '');
-            // if (lines.length > 1) {
-            //     return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
-            // } else {
-            //     return false
-            // }
         }
 
         function parseProgressNote(text) {
