@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      0.0
+// @version      1.0
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -19,7 +19,7 @@ const AUTO_ASSIGN_BUTTON_ID = 'autoAssignButtonId';
 const MAX_PAGE_SIZE = 50;
 const UUID_CACHE = "uuidTesseractCache";
 const NAME_LINE_REGEX = /([A-Za-z-]+),\s*([A-Za-z]+)/i;
-const PHN_LINE_REGEX = /(\d{10})\s*([A-Za-z]{3})\s*(\d{2}),\s*(\d{4})\s*(Male|Female)/i;
+const PHN_LINE_REGEX = /(\d{10})\s*([A-Za-z]{3})\s*(\d{2}),\s*(\d{4})\s*(Male|Female|Femaie)/i;
 const SPINNER_TEXT_ID = "spinnerTextId";
 const SCAN_SCAN_UUID = "35036200-1fe3-4f88-a3cf-96a88753b6d1";
 const WARNING_COLOR = '#E63B16';
@@ -46,21 +46,40 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             })
         }
 
+        async function autoAssign(efax){
+            const { uuid, text } = await extractTextFromEfax(efax.id);
+            if (!isProgressNote(text)) {
+                // console.log("Recieved efax with text that does not match Progress Notes")
+                console.log(efax)
+                return null;
+            }
+            const { phn, last_name } = parseProgressNote(text);
+            const patient_data = await fetchPatientData(phn);
+            if (patient_data != null && patient_data?.last_name?.toLowerCase() != last_name.toLowerCase()) {
+                console.log("Patient found in Arya but last name does not match Expected: " + last_name + " Actual: " + patient_data?.last_name);
+                return null;
+            }
+            const update_result = await updateEfaxRecord(uuid, patient_data);
+            if (update_result == null) {
+                return null;
+            }
+            const assign_result = await assignResultToPatient(uuid);
+            return { ...assign_result, patient: patient_data};
+        }
+
         async function autoAssignAll(){
-            const efaxes = await listIncomingScannedEfaxes()
-            displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
-            console.time('Process All Efaxes Time');
             try {
-                const efax_results = await allProgress(efaxes.map(efax => extractTextFromEfax(efax.id)), (p) => {
+                const efaxes = await listIncomingScannedEfaxes()
+                console.log(efaxes)
+                displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
+                console.time('Process All Efaxes Time');
+                const inserted_results = (await allProgress(efaxes.map(autoAssign), (p) => {
                     updateSpinnerProgress(p)
-                });
-                console.log(efax_results)
+                })).filter(efax => efax != null);
+                console.log("inserted_results")
+                console.log(inserted_results)
                 console.timeEnd('Process All Efaxes Time');
                 scheduler.terminate();
-                let parsed_results = efax_results.filter(isProgressNote).map(parseProgressNote)
-                let with_patient_results = await Promise.all(parsed_results.map(addPatientData))
-                let updated_results = await Promise.all(with_patient_results.map(updateEfaxRecord))
-                let inserted_results = await Promise.all(updated_results.map(assignResultToPatient))
                 removeSpinner()
                 if (inserted_results.length > 0) {
                     successAlert("Successfully assigned " + inserted_results.length + " progress notes!", "See the downloaded summary file for details")
@@ -71,35 +90,36 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             } catch (error) {
                 warningAlert("Oops! Unexpected error. Contact Bryson 604-300-6875", error.message);
             } finally {
-                removeSpinner()
+                removeSpinner();
             }
         }
 
-        function assignResultToPatient(efax_result) {
-            console.log("Assigning efax_result: " + efax_result.id);
-            console.log(efax_result);
-            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/save_and_clear/?uuid=" + efax_result.id, {
+        function assignResultToPatient(uuid) {
+            console.log("Assigning efax_result: " + uuid);
+            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/save_and_clear/?uuid=" + uuid, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             })
             .then(response => response.json())
-            .then((inserted) => { return { ...inserted, patient: efax_result.patient }})
+            .catch(error => {
+                console.error(`Error assigning efax=${uuid} to patient: ${error}`)
+                return null
+            })
         }
 
-        function updateEfaxRecord(efax_result) {
-            console.log("Updating efax_result: " + efax_result.uuid);
-            console.log(efax_result)
-            let patient_uuid = efax_result.patient_data.id;
-            if (patient_uuid != "ecdfec0e-597d-4ac3-9ffd-4454b5291815") {
-                confirm("The patient you are about to update does not match Rafael Nadal's uuid. Are you sure?")
-            }
-            let payload = { "id":efax_result.uuid, "title":"Progress Notes", document_type:"note", user_id: SCAN_SCAN_UUID, patient_id: patient_uuid} 
-            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/incoming_faxes/" + efax_result.uuid, {
+        function updateEfaxRecord(uuid, patient_data) {
+            console.log("Updating efax_result: " + uuid);
+            let payload = { "id":uuid, "title":"Progress Notes", document_type:"note", user_id: SCAN_SCAN_UUID, patient_id: patient_data.id} 
+            return fetch(ARYA_URL_ROOT + window.clinic_id + "/srfax_engine/incoming_faxes/" + uuid, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify(payload)
             })
             .then(response => response.json())
+            .catch(error => {
+                console.error(`Error updating efax record=${uuid}: ${error}`)
+                return null
+            })
         }
 
         // A function to track the progress of Promise.ALL
@@ -116,55 +136,41 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             return Promise.all(proms);
         }
 
-        async function addPatientData(efax_result){
-            let phn = efax_result.phn;
+        async function fetchPatientData(phn){
             return fetch(ARYA_URL_ROOT + window.clinic_id + '/patients.json?limit=1&offset=0&term=' + phn.replace(/\s/g, ""), {
                 method: 'GET',
             })
             .then(response => response.json())
             .then(jsonList => {
                 if (jsonList.length == 1) {
-                    let data = jsonList[0];
-                    if (data.last_name == efax_result.last_name) {
-                        return { ...efax_result, patient_data: data }
-                    } else {
-                        console.log("Patient found in Arya but last name does not match Expected: " + efax_result.last_name + " Actual: " + data.last_name);
-                    }
-                } else {
-                    console.log("There is no patient found in Arya with PHN: " + phn + " Length: " + jsonList.length);
-                }
-                return { ...efax_result, patient_data: null }
+                    return jsonList[0];
+                } 
+                console.log("There is no patient found in Arya with PHN: " + phn + " Length: " + jsonList.length);
+                return null
+            })
+            .catch(error => {
+                console.error(`Error fetching patient with phn=${phn}: ${error}`)
+                return null
             })
         }
 
-        // [
-        //     "Nadal, Rafael",
-        //     "1234567890 Oct 09,1997 Male",
-        // ]
-        // { uuid: uuid, text: cache.get(uuid) }
-        function isProgressNote(efax_result) {
-            // TODO remove the testing code
-            if(efax_result.text==TEST_TEXT) { 
-                return true
+        function isProgressNote(text) {
+            let lines = text.split('\n').filter(line => line != '');
+            if (lines.length > 1) {
+                return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
+            } else {
+                return false
             }
-            return false
-            // let lines = efax_result.text.split('\n')
-            // if (lines.length > 1) {
-            //     return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
-            // } else {
-            //     return false
-            // }
         }
 
-        function parseProgressNote(efax_result) {
-            // TODO remove the testing code
-            if(efax_result.text==TEST_TEXT) { 
-                return { ...efax_result, phn: "1234123123", last_name: "Nadal" }
+        function parseProgressNote(text) {
+            if (text == TEST_TEXT) {
+                return { phn: "1234123123", last_name: "Nadal" }
             }
-            let lines = efax_result.text.split('\n')
-            let last_name = NAME_LINE_REGEX.exec(lines[0])[1]
-            let phn = PHN_LINE_REGEX.exec(lines[1])[1]
-            return { ...efax_result, phn: phn, last_name: last_name }
+            let lines = text.split('\n').filter(line => line != '');
+            let last_name = name_line_regex.exec(lines[0])[1]
+            let phn = phn_line_regex.exec(lines[1])[1]
+            return { phn: phn, last_name: last_name }
         }
 
         async function extractTextFromEfax(uuid) {
@@ -214,7 +220,6 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                 try {
                     // Make the API call
                     const result = await fetchIncomingEfaxes(offset);
-                    console.log(result)
 
                     // Check if there are more pages to fetch
                     hasMoreData = result && result.length === MAX_PAGE_SIZE;
@@ -322,12 +327,12 @@ const TEST_TEXT = 'Fake Efax for testing\n';
         function createAutoAssignButton(panelHeader){
             let buttonGroup = panelHeader.children[1];
             let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
-            let goBackButtonSpan = signButtonSpan.cloneNode(true);
-            goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Auto Assign All";
-            let backButton = goBackButtonSpan.querySelector("button");
-            backButton.id = AUTO_ASSIGN_BUTTON_ID;
-            backButton.addEventListener("click", autoAssignAll);
-            buttonGroup.appendChild(goBackButtonSpan);
+            let autoAssignButtonSpan = signButtonSpan.cloneNode(true);
+            autoAssignButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Auto Assign All";
+            let autoAssignButton = autoAssignButtonSpan.querySelector("button");
+            autoAssignButton.id = AUTO_ASSIGN_BUTTON_ID;
+            autoAssignButton.addEventListener("click", autoAssignAll);
+            buttonGroup.appendChild(autoAssignButtonSpan);
         }
 
         function downloadSummaryLog(results) {
