@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -31,7 +31,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
 (function() {
     let overlay = null;
     'use strict';
-    Promise.all([initPDFJS(), initTesseract(navigator.hardwareConcurrency)]).then(([_, scheduler]) => {
+    Promise.all([initPDFJS(), initTesseract(navigator.hardwareConcurrency/2)]).then(([_, scheduler]) => {
         window.clinic_id = window.location.href.split("/")[CLINIC_ID_INDEX];
         window.onload = observeUrlChange(IS_EFAX_PAGE, onPageLoad);
         const cache = loadCache();
