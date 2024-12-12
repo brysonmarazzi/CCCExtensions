@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
 // @icon         https://static.wixstatic.com/media/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png/v1/fill/w_146,h_150,al_c,q_85,enc_auto/655afa_e1a9bb3939634fe2a263d24ef95da02b~mv2.png
 // @require      https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js
-// @require      https://cdn.jsdelivr.net/npm/tracking@1.1.3/build/tracking-min.js
 // ==/UserScript==
 
 const IS_EFAX_PAGE = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/efax$/;
