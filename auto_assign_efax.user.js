@@ -71,6 +71,10 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             try {
                 const efaxes = await listIncomingScannedEfaxes()
                 console.log(efaxes)
+                if (efaxes.length == 0) {
+                    infoAlert("There are no incoming scanned efaxes to process at this time.")
+                    return;
+                }
                 displaySpinner("Scanning " + efaxes.length + " Incoming efaxes")
                 console.time('Process All Efaxes Time');
                 const inserted_results = (await allProgress(efaxes.map(autoAssign), (p) => {
