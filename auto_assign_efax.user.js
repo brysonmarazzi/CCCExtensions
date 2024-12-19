@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -10,7 +10,7 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js
 // ==/UserScript==
 
-const IS_EFAX_PAGE = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/efax$/;
+const IS_EFAX_PAGE = /^https:\/\/app\.aryaehr\.com\/aryaehr\/clinics\/[a-zA-Z0-9-]+\/efax(?:\?tab=inbox)?$/;
 const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
 const CLINIC_ID_INDEX = 5;
 const PDF_JS_WORKER_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js";
@@ -60,6 +60,9 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             const patient_data = await fetchPatientData(phn);
             if (patient_data != null && patient_data?.last_name?.toLowerCase() != last_name.toLowerCase()) {
                 console.log("Patient found in Arya but last name does not match Expected: " + last_name + " Actual: " + patient_data?.last_name);
+                return null;
+            }
+            if (patient_data == null) {
                 return null;
             }
             const update_result = await updateEfaxRecord(uuid, patient_data);
@@ -154,7 +157,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                 if (jsonList.length == 1) {
                     return jsonList[0];
                 } 
-                console.log("There is no patient found in Arya with PHN: " + phn + " Length: " + jsonList.length);
+                console.log("There is no patient found in Arya with PHN: " + phn);
                 return null
             })
             .catch(error => {
