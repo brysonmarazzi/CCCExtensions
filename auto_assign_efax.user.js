@@ -43,6 +43,24 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                     createAutoAssignButton(panelHeader);
                 }
                 enableButton()
+                const fileInput = document.querySelector('input[type="file"]');
+                fileInput.addEventListener('change', (event) => {
+                    const files = event.target.files; // Get the selected files
+                    console.log('Files selected:', files);
+
+                    // Example callback: Log file names
+                    for (let i = 0; i < files.length; i++) {
+                        console.log('File selected:', files[i].name);
+                        console.log(files[i]);
+                    }
+                    fetchIncomingEfaxes(0)
+                    .then(efaxes => {
+                        getEfaxPdfUrl(efaxes[0].id)
+                        .then(res => {
+                            console.log(res)
+                        })
+                    })
+                });
             })
         }
 
@@ -253,7 +271,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                 method: 'GET',
             })
             .then(response => response.json())
-            .then(result => result.fax_document.pdf_url)
+            // .then(result => result.fax_document.pdf_url)
         }
 
         async function readImageText(imageContext) {
