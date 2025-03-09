@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Arya Results Number
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      2.0
 // @description  Logs the number of Results for a Doctor
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -14,7 +14,7 @@ const PHARMA_URL_ROOT = 'https://swan.medinet.ca/cgi-bin/launch.cgi';
 const PATIENT_ID_INDEX = 7;
 const CLINIC_ID_INDEX = 5;
 const MAX_PAGE_SIZE = 50;
-
+const CURRENT_DOCTOR_DIV_ID = "mat-select-value-1";
 (function() {
     'use strict';
     const numberNode = document.createTextNode("-");
@@ -88,7 +88,7 @@ const MAX_PAGE_SIZE = 50;
         });
 
         // Observe the target element (the span)
-        const target = document.querySelector('.mat-select-value-text');
+        const target = document.getElementById(CURRENT_DOCTOR_DIV_ID);
         observer.observe(target, { 
             characterDataOldValue: true,
             subtree: true, 
@@ -98,7 +98,7 @@ const MAX_PAGE_SIZE = 50;
     }
 
     function insertTextNode() {
-        const parentContainer = document.querySelector('.mat-select-value-text');
+        const parentContainer = document.getElementById(CURRENT_DOCTOR_DIV_ID);
         parentContainer.appendChild(document.createTextNode(" ["));
         parentContainer.appendChild(numberNode);
         parentContainer.appendChild(document.createTextNode("]"));
@@ -112,7 +112,6 @@ const MAX_PAGE_SIZE = 50;
             return users.find(user => (user.first_name + " " + user.last_name).trim() == current_user);
         })
         .then(user => {
-            console.log("Current User:");
             console.log(user);
             if (user !== undefined) {
                 return countUusersResults(user.uuid);
@@ -123,7 +122,6 @@ const MAX_PAGE_SIZE = 50;
     }
 
     function getUsersList(){
-        console.log("get Users list:");
         // Make the GET request
         return fetch(ARYA_URL_ROOT + window.clinic_id, {
             method: 'GET',
