@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Print All Progress Notes
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      9.0
 // @description  Print Progress Notes for all Patients
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -17,7 +17,6 @@ const WARNING_COLOR = '#E63B16';
 const INFO_COLOR = '#8B8000';
 const SUCCESS_COLOR = '#228B22';
 const PROGRESS_NOTE_FORM_ID = "b36b4514-c069-44d1-9945-0500e2247f0c";
-const DATE_SELECTION_ID = "select_day";
 const FAKE_PATIENT = "INDIRECTCAREHOURS";
 const BUTTON_TEXT =  "Print Progress Notes";
 const PROGRESS_NOTES_BUTTON_ID = 'progress-notes-id';
@@ -33,13 +32,12 @@ function onSchedulePage(){
 function addPrintButtonToScreen(schedule){
     try {
         if(!document.getElementById(PROGRESS_NOTES_BUTTON_ID)){
-            let buttonsGroup = schedule.querySelector(".add-buttons-group");
-            let buttonContainer = buttonsGroup.lastChild;
-            let newButton = buttonContainer.lastChild.cloneNode(true);
+            const buttonContainerSpan = document.querySelector('span.green_text');
+            const newButton = document.querySelector('span.green_text button:last-of-type').cloneNode(true);
             newButton.innerText = BUTTON_TEXT;
             newButton.id = PROGRESS_NOTES_BUTTON_ID;
             newButton.addEventListener("click", handleButtonClick);
-            buttonContainer.appendChild(newButton);
+            buttonContainerSpan.appendChild(newButton);
         }
     } catch (e) {
         throw new AryaChangedError(e.message);
@@ -244,8 +242,9 @@ function handleError(error){
     console.error(error);
 }
 
+// Input is: ' Saturday, March 8'
 function toDateObject(input) {
-  const dateParts = input.split(' ');
+  const dateParts = input.trim().split(' ');
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June', 'July',
     'August', 'September', 'October', 'November', 'December'
@@ -305,7 +304,7 @@ function promptPrint(pdfBytes){
 
 function getSelectedDateString(){
     try {
-        return document.getElementById(DATE_SELECTION_ID).value;
+        return document.querySelector(".date").textContent;
     } catch (e){
         throw new AryaChangedError(
             "Element with id=" + DATE_SELECTION_ID + " doesn't exist!",
@@ -327,14 +326,16 @@ function getPatientsForTheDay(userId){
     let queryParams = "?limit=100&offset=0&user_uuid=" + userId + "&start_time=" + dateParams.start + "&end_time=" + dateParams.end + "&setUnavailableEvent=false";
     return fetch(url + queryParams, { method: 'GET' })
         .then(response => response.json())
-        .then(scheduleItems => scheduleItems.filter(item => item.patient_last_name !== FAKE_PATIENT)) // quick fix - investigate further - Oct 6, 2023
-        .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient_id, reason: (item.description ? item.description : '') } }))
+        .then(scheduleItems => scheduleItems.filter(item => item.patient.last_name !== FAKE_PATIENT)) // quick fix - investigate further - Oct 6, 2023
+        .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient.uuid, reason: (item.description ? item.description : '') } }))
 }
 
 function getCurrentAdminUser(){
     try{
-        let nav = document.querySelector(".schedule-navigation");
-        return nav.firstChild.querySelector(".mat-select-min-line").innerText;
+        return adminSelectorList = document
+            .getElementById("cdk-drop-list-0")
+            .querySelector(".mdc-list-item--selected")
+            .querySelector(".title").innerText;
     } catch (e) {
         throw new AryaChangedError(e.message)
     }
