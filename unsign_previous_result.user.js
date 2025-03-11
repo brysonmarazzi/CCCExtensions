@@ -46,7 +46,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         let buttonGroup = panelHeader.children[1];
         let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
         let goBackButtonSpan = signButtonSpan.cloneNode(true);
-        goBackButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Unsign Previous";
+        goBackButtonSpan.querySelector("span.mdc-button__label").innerText = "Unsign Previous";
         let backButton = goBackButtonSpan.querySelector("button");
         backButton.id = BACK_BUTTON_ID;
         backButton.addEventListener("click", unsign);
@@ -190,6 +190,7 @@ const ARYA_URL_ROOT = 'https://app.aryaehr.com/api/v1//clinics/';
         // Make the GET request
         const queryParams = new URLSearchParams(urlParams);
         const fullUrl = `${ARYA_URL_ROOT + window.clinic_id + '/results.json'}?${queryParams.toString()}`;
+        console.log(fullUrl)
         return fetch(fullUrl, {
             method: 'GET',
         })
