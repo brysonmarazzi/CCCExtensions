@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Auto Assign eFax
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      2.0
 // @description  Auto Assigns new eFaxs that arrive in the 'Efax Inbox' to the patient
 // @author       Bryson Marazzi
 // @match        https://app.aryaehr.com/aryaehr/clinics/*
@@ -26,7 +26,7 @@ const WARNING_COLOR = '#E63B16';
 const SUCCESS_COLOR = '#228B22';
 const INFO_COLOR = '#8B8000';
 
-const TEST_TEXT = 'Fake Efax for testing\n';
+// const TEST_BODY_TEXT = 'THIS IS A TEST DOC - BRYSON';
 
 (function() {
     let overlay = null;
@@ -42,7 +42,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                 if (document.getElementById(AUTO_ASSIGN_BUTTON_ID) === null){
                     createAutoAssignButton(panelHeader);
                 }
-                enableButton()
+                enableButton();
                 const fileInput = document.querySelector('input[type="file"]');
                 fileInput.addEventListener('change', (event) => {
                     const files = event.target.files; // Get the selected files
@@ -94,7 +94,6 @@ const TEST_TEXT = 'Fake Efax for testing\n';
         async function autoAssignAll(){
             try {
                 const efaxes = await listIncomingScannedEfaxes()
-                console.log(efaxes)
                 if (efaxes.length == 0) {
                     infoAlert("There are no incoming scanned efaxes to process at this time.")
                     return;
@@ -186,6 +185,8 @@ const TEST_TEXT = 'Fake Efax for testing\n';
         }
 
         function isProgressNote(text) {
+            // if (text.trim() == TEST_BODY_TEXT) { return true; }
+
             let lines = text.split('\n').filter(line => line != '');
             if (lines.length > 1) {
                 return NAME_LINE_REGEX.test(lines[0]) && PHN_LINE_REGEX.test(lines[1]) 
@@ -195,9 +196,9 @@ const TEST_TEXT = 'Fake Efax for testing\n';
         }
 
         function parseProgressNote(text) {
-            if (text == TEST_TEXT) {
-                return { phn: "1234123123", last_name: "Nadal" }
-            }
+            // if (text.trim() == TEST_BODY_TEXT) {
+            //     return { phn: "1234123123", last_name: "Nadal" }
+            // }
             let lines = text.split('\n').filter(line => line != '');
             let last_name = NAME_LINE_REGEX.exec(lines[0])[1]
             let phn = PHN_LINE_REGEX.exec(lines[1])[1]
@@ -271,7 +272,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
                 method: 'GET',
             })
             .then(response => response.json())
-            // .then(result => result.fax_document.pdf_url)
+            .then(result => result.fax_document.pdf_url)
         }
 
         async function readImageText(imageContext) {
@@ -359,7 +360,7 @@ const TEST_TEXT = 'Fake Efax for testing\n';
             let buttonGroup = panelHeader.children[1];
             let signButtonSpan = buttonGroup.children[buttonGroup.children.length - 1];
             let autoAssignButtonSpan = signButtonSpan.cloneNode(true);
-            autoAssignButtonSpan.querySelector("span.mat-button-wrapper").innerText = "Auto Assign All";
+            autoAssignButtonSpan.querySelector("span.mdc-button__label").innerText = "Auto Assign All";
             let autoAssignButton = autoAssignButtonSpan.querySelector("button");
             autoAssignButton.id = AUTO_ASSIGN_BUTTON_ID;
             autoAssignButton.addEventListener("click", autoAssignAll);
