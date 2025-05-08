@@ -327,7 +327,8 @@ function getPatientsForTheDay(userId){
     return fetch(url + queryParams, { method: 'GET' })
         .then(response => response.json())
         .then(scheduleItems => scheduleItems.filter(item => item.patient.last_name !== FAKE_PATIENT)) // quick fix - investigate further - Oct 6, 2023
-        .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient.uuid, reason: (item.description ? item.description : '') } }))
+        .then(scheduleItems => scheduleItems.sort((a, b) => new Date(a.start_time) - new Date(b.start_time)))
+        .then(scheduleItems => scheduleItems.map(item => { return { uuid: item.patient.uuid, reason: (item.description ? item.description : '') }}))
 }
 
 function getCurrentAdminUser(){
